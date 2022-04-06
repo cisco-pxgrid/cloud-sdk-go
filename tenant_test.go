@@ -79,7 +79,7 @@ func (suite *TenantTestSuite) Test_getDevices() {
 		},
 	}
 
-	httpClient := resty.New().SetHostURL("https://test.com")
+	httpClient := resty.New().SetBaseURL("https://test.com")
 	tenant.setHttpClient(httpClient)
 	httpmock.ActivateNonDefault(httpClient.GetClient())
 	defer httpmock.DeactivateAndReset()
@@ -137,7 +137,7 @@ func (suite *TenantTestSuite) Test_getDeviceByID() {
 		status: "un-enrolled",
 		tenant: &tenant,
 	}
-	httpClient := resty.New().SetHostURL("https://test.com")
+	httpClient := resty.New().SetBaseURL("https://test.com")
 	tenant.setHttpClient(httpClient)
 	httpmock.ActivateNonDefault(httpClient.GetClient())
 	defer httpmock.DeactivateAndReset()

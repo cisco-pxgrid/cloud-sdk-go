@@ -127,7 +127,7 @@ func New(config Config) (*App, error) {
 	}
 
 	httpClient := resty.New().
-		SetHostURL(hostURL.String()).
+		SetBaseURL(hostURL.String()).
 		OnBeforeRequest(func(_ *resty.Client, request *resty.Request) error {
 			credentials, err := config.GetCredentials()
 			if err != nil {
@@ -475,7 +475,7 @@ func (app *App) setTenant(tenant *Tenant) error {
 	app.tenantMap.Store(tenant.id, tenant)
 
 	httpClient := resty.NewWithClient(app.httpClient.GetClient()).
-		SetHostURL(app.httpClient.HostURL)
+		SetBaseURL(app.httpClient.HostURL)
 	tenant.setHttpClient(httpClient)
 
 	regionalHostURL := url.URL{
@@ -483,7 +483,7 @@ func (app *App) setTenant(tenant *Tenant) error {
 		Path:   url.PathEscape(app.config.RegionalFQDN),
 	}
 	regionalHttpClient := resty.NewWithClient(app.httpClient.GetClient()).
-		SetHostURL(regionalHostURL.String())
+		SetBaseURL(regionalHostURL.String())
 	tenant.setRegionalHttpClient(regionalHttpClient)
 	tenant.app = app
 

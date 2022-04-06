@@ -43,7 +43,7 @@ func (suite *DeviceTestSuite) TestGetDeviceStatus() {
 	}`
 
 	tenant := Tenant{}
-	httpClient := resty.New().SetHostURL("https://test.com")
+	httpClient := resty.New().SetBaseURL("https://test.com")
 	tenant.setHttpClient(httpClient)
 	device := Device{id: "deviceId"}
 	device.tenant = &tenant
