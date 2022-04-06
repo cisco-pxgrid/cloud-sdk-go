@@ -24,6 +24,7 @@ type Config struct {
 	RejectConn        bool
 	PublishError      bool
 	ConsumeError      bool
+	ConsumeDrop       bool
 }
 
 type sub struct {
@@ -90,6 +91,8 @@ func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
 				params, _ := req.ConsumeParams()
 				if cfg.ConsumeError {
 					resp = rpc2.NewErrorResponse(req.ID, fmt.Errorf("Consume Error"))
+				} else if cfg.ConsumeDrop {
+					resp = nil
 				} else {
 					subsMu.Lock()
 					for stream, sub := range subs {
@@ -114,9 +117,10 @@ func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
 					subsMu.Unlock()
 				}
 			}
-
-			err = c.Write(ctx, mt, resp.Bytes())
-			assert.NoError(t, err)
+			if resp != nil {
+				err = c.Write(ctx, mt, resp.Bytes())
+				assert.NoError(t, err)
+			}
 		}
 	})
 

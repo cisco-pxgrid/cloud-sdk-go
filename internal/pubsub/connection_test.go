@@ -51,7 +51,7 @@ func Test_E2E(t *testing.T) {
 		receivedMu.Lock()
 		receivedMsgs[stream] = 0
 		receivedMu.Unlock()
-		err = c.Subscribe(stream,
+		_, err = c.Subscribe(stream, "",
 			func(e error, id string, _ map[string]string, payload []byte) {
 				t.Logf("Received message: %s, payload: %s", id, payload)
 				receivedMu.Lock()
@@ -281,7 +281,7 @@ func Test_ConsumeError(t *testing.T) {
 	require.NoError(t, err)
 
 	count := 0
-	err = c.Subscribe("test-stream",
+	_, err = c.Subscribe("test-stream", "",
 		func(e error, _ string, _ map[string]string, _ []byte) {
 			t.Logf("Got error: %v", e)
 			assert.Error(t, e)
@@ -386,7 +386,7 @@ func Test_PublishAsync(t *testing.T) {
 	require.NoError(t, err)
 
 	count := 0
-	err = c.Subscribe("test-stream",
+	_, err = c.Subscribe("test-stream", "",
 		func(e error, id string, _ map[string]string, payload []byte) {
 			assert.NoError(t, e)
 			t.Logf("Received message %s: %s", id, payload)
@@ -441,7 +441,7 @@ func Test_PublishAsyncCanceled(t *testing.T) {
 	require.NoError(t, err)
 
 	count := 0
-	err = c.Subscribe("test-stream",
+	_, err = c.Subscribe("test-stream", "",
 		func(e error, id string, _ map[string]string, payload []byte) {
 			assert.NoError(t, e)
 			t.Logf("Received message %s: %s", id, payload)
@@ -465,4 +465,49 @@ func Test_PublishAsyncCanceled(t *testing.T) {
 	assert.True(t, c.IsDisconnected())
 	assert.Zero(t, len(c.subs.table))
 	assert.Equal(t, 1, count)
+}
+
+func Test_ConsumeTimeout(t *testing.T) {
+	s := test.NewRPCServer(t, test.Config{
+		PubSubPath:        apiPaths.pubsub,
+		SubscriptionsPath: apiPaths.subscriptions,
+		ConsumeDrop:       true,
+	})
+	defer s.Close()
+
+	// Change to shorter timeout
+	consumeResponseTimeout = 2 * time.Second
+
+	u, _ := url.Parse(s.URL)
+
+	c, err := NewConnection(Config{
+		GroupID: "test-client",
+		Domain:  u.Host,
+		APIKeyProvider: func() ([]byte, error) {
+			return []byte("xyz"), nil
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, c)
+
+	c.restClient.SetTLSClientConfig(&tls.Config{
+		InsecureSkipVerify: true, // no verification for test server
+	})
+
+	err = c.Connect(context.Background())
+	require.NoError(t, err)
+
+	_, err = c.Subscribe("test-stream", "",
+		func(_ error, _ string, _ map[string]string, _ []byte) {
+			require.Fail(t, "Unexpected message")
+		})
+	assert.NoError(t, err)
+
+	select {
+	case <-c.Error:
+		require.True(t, c.ConsumeTimeout)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "Error expected")
+	}
+	c.Disconnect()
 }
