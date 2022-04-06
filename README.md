@@ -1,6 +1,6 @@
 # Cisco pxGrid Cloud SDK for Go
 
-![Tests](https://github.com/cisco-pxgrid/cloud-sdk-go/actions/workflows/test.yaml/badge.svg?branch=main) ![Static Analysis](https://github.com/cisco-pxgrid/cloud-sdk-go/actions/workflows/lint.yaml/badge.svg?branch=main)
+![Tests](https://github.com/cisco-pxgrid/cloud-sdk-go/actions/workflows/test.yaml/badge.svg?branch=main) ![Static Analysis](https://github.com/cisco-pxgrid/cloud-sdk-go/actions/workflows/lint.yaml/badge.svg?branch=main) [![Release](https://img.shields.io/github/v/release/cisco-pxgrid/cloud-sdk-go?sort=semver)](https://github.com/cisco-pxgrid/cloud-sdk-go/releases/latest) [![Docs](https://pkg.go.dev/badge/github.com/cisco-pxgrid/cloud-sdk-go)](https://pkg.go.dev/github.com/cisco-pxgrid/cloud-sdk-go)
 
 # Overview
 
