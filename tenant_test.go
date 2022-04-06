@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"sort"
 	"sync"
 	"testing"
 
@@ -23,6 +24,9 @@ func (suite *TenantTestSuite) TestGetDevices() {
 		device1,
 		device2,
 	}
+	sort.Slice(expected, func(i, j int) bool {
+		return expected[i].id < expected[j].id
+	})
 
 	app := &App{}
 	tenant := Tenant{id: "tenantId"}
@@ -36,6 +40,9 @@ func (suite *TenantTestSuite) TestGetDevices() {
 	if err != nil {
 		suite.Fail(err.Error())
 	}
+	sort.Slice(devices, func(i, j int) bool {
+		return devices[i].id < devices[j].id
+	})
 	suite.T().Log("Expected:", expected, " Received: ", devices)
 	suite.True(reflect.DeepEqual(expected, devices))
 }
