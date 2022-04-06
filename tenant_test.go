@@ -19,9 +19,10 @@ type TenantTestSuite struct {
 func (suite *TenantTestSuite) TestGetDevices() {
 	device1 := Device{id: "1"}
 	device2 := Device{id: "2"}
-	expected := make([]Device, 0)
-	expected = append(expected, device1)
-	expected = append(expected, device2)
+	expected := []Device{
+		device1,
+		device2,
+	}
 
 	app := &App{}
 	tenant := Tenant{id: "tenantId"}
@@ -33,8 +34,9 @@ func (suite *TenantTestSuite) TestGetDevices() {
 
 	devices, err := tenant.GetDevices()
 	if err != nil {
-		panic(err)
+		suite.Fail(err.Error())
 	}
+	suite.T().Log("Expected:", expected, " Received: ", devices)
 	suite.True(reflect.DeepEqual(expected, devices))
 }
 
@@ -95,7 +97,7 @@ func (suite *TenantTestSuite) Test_getDevices() {
 
 	devices, err := tenant.getDevices()
 	if err != nil {
-		panic(err)
+		suite.Fail(err.Error())
 	}
 	suite.EqualValues(expected, devices)
 }
@@ -153,7 +155,7 @@ func (suite *TenantTestSuite) Test_getDeviceByID() {
 
 	device, err := tenant.getDeviceByID("any_id")
 	if err != nil {
-		panic(err)
+		suite.Fail(err.Error())
 	}
 	suite.EqualValues(&expected, device)
 }
@@ -172,7 +174,7 @@ func (suite *TenantTestSuite) TestGetDeviceByID() {
 
 	device, err := tenant.GetDevice("2")
 	if err != nil {
-		panic(err)
+		suite.Fail(err.Error())
 	}
 	suite.EqualValues(&device2, device)
 }
