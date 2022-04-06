@@ -45,13 +45,18 @@ func Test_E2E(t *testing.T) {
 	// 5 subscriptions
 	numSubs := 5
 	receivedMsgs := make(map[string]int, numSubs)
+	receivedMu := sync.Mutex{}
 	for i := 0; i < numSubs; i++ {
 		stream := fmt.Sprintf("test-stream-%d", i)
+		receivedMu.Lock()
 		receivedMsgs[stream] = 0
+		receivedMu.Unlock()
 		err = c.Subscribe(stream,
 			func(e error, id string, _ map[string]string, payload []byte) {
 				t.Logf("Received message: %s, payload: %s", id, payload)
+				receivedMu.Lock()
 				receivedMsgs[stream]++
+				receivedMu.Unlock()
 				assert.NoError(t, e)
 			})
 		assert.NoError(t, err)
@@ -68,8 +73,7 @@ func Test_E2E(t *testing.T) {
 			for i := 0; i < numMessages; i++ {
 				payload := []byte("This is a test message on " + stream + ": " + strconv.Itoa(i))
 				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				var r *PublishResult
-				r, err = c.Publish(ctx, stream, nil, payload)
+				r, err := c.Publish(ctx, stream, nil, payload)
 				cancel()
 				assert.NoError(t, err)
 				t.Logf("Published message: %s to stream: %s, payload: %s", r.ID, stream, payload)
@@ -84,7 +88,9 @@ func Test_E2E(t *testing.T) {
 	// verify
 	for i := 0; i < numSubs; i++ {
 		stream := fmt.Sprintf("test-stream-%d", i)
+		receivedMu.Lock()
 		assert.Equal(t, numMessages, receivedMsgs[stream], "Did not receive all the mssages from stream", i)
+		receivedMu.Unlock()
 	}
 
 	c.Disconnect()

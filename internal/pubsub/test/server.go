@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	rpc2 "github.com/cisco-pxgrid/cloud-sdk-go/internal/rpc"
@@ -36,6 +37,7 @@ func (s *sub) String() string {
 }
 
 var subs = map[string]*sub{}
+var subsMu = sync.Mutex{}
 
 // NewRPCServer creates and starts a test HTTP server that talks RPC
 func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
@@ -75,7 +77,9 @@ func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
 					resp = rpc2.NewErrorResponse(req.ID, fmt.Errorf("Publish Error"))
 				} else {
 					for _, p := range params {
+						subsMu.Lock()
 						s := subs[p.Stream]
+						subsMu.Unlock()
 						if s != nil {
 							s.params = append(s.params, *p)
 						}
@@ -87,6 +91,7 @@ func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
 				if cfg.ConsumeError {
 					resp = rpc2.NewErrorResponse(req.ID, fmt.Errorf("Consume Error"))
 				} else {
+					subsMu.Lock()
 					for stream, sub := range subs {
 						if sub.id != params.SubscriptionID {
 							continue
@@ -106,6 +111,7 @@ func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
 						sub.params = make([]rpc2.PublishParams, 0)
 						resp = rpc2.NewConsumeResponse(req.ID, "", sub.id, stream, msgs)
 					}
+					subsMu.Unlock()
 				}
 			}
 
@@ -129,10 +135,12 @@ func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
 			_ = json.Unmarshal(body, &req)
 			t.Logf("Received new subscription request: %+v", req)
 			id := uuid.NewString()
+			subsMu.Lock()
 			subs[req.Streams[0]] = &sub{
 				stream: req.Streams[0],
 				id:     id,
 			}
+			subsMu.Unlock()
 
 			resp := struct {
 				ID string `json:"_id"`
@@ -147,11 +155,13 @@ func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
 			id := chi.URLParam(r, "id")
 			t.Logf("Got delete subscription request: %v", id)
 
+			subsMu.Lock()
 			for stream, s := range subs {
 				if id == s.id {
 					delete(subs, stream)
 				}
 			}
+			subsMu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
 		})
 	})
