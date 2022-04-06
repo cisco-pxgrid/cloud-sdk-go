@@ -1,9 +1,33 @@
-# pxGrid Cloud SDK for Go
+# Cisco pxGrid Cloud SDK for Go
 
-pxGrid Cloud SDK for Go (simply referred to as "the SDK" from this point onwards) lets you easily
-create applications that work seamlessly with Cisco pxGrid Cloud.
+![Tests](https://github.com/cisco-pxgrid/cloud-sdk-go/actions/workflows/test.yaml/badge.svg?branch=main) ![Static Analysis](https://github.com/cisco-pxgrid/cloud-sdk-go/actions/workflows/lint.yaml/badge.svg?branch=main)
 
-# How to use the SDK
+# Overview
+
+`cloud-sdk-go` is the Cisco pxGrid Cloud SDK for the Go programming language. This SDK requires a
+minimum version of `Go 1.15`.
+
+The SDK lets you easily create applications for Cisco pxGrid Cloud and consume pxGrid, ERS and
+OpenAPI services from Cisco Identity Services Engine (ISE) devices.
+
+## Features
+
+- Multi-tenancy support
+- Create an instance of an application
+- Link application with a Cisco DNA - Cloud tenant
+- Receive pxGrid topic messages from Cisco ISE devices
+- Invoke REST APIs on Cisco ISE devices
+    + pxGrid APIs
+    + ERS APIs
+    + OpenAPI APIs
+
+# Install
+
+```sh
+go get github.com/cisco-pxgrid/cloud-sdk-go
+```
+
+# Usage
 
 ## Examples
 
@@ -113,8 +137,8 @@ if err != nil {
 
 ## Terminology
 
-- `App`: An app represents an application that's onboarded on the Cisco EN Cloud App Store.
+- `App`: An app represents an application that's available on the Cisco DNA - Cloud App Store.
 - `Tenant`: A tenant represents a Cisco customer that subscribes to and intends to use services
-  provided by the Cisco EN Cloud.
+Cisco DNA - Cloud services.
 - `Device`: A device represents an on-premise entity (an appliance, a VM, a deployment, a cluster,
-  etc.) that is registered with the Cisco EN Cloud.
+  etc.) that is registered with the Cisco DNA - Cloud. Cisco ISE is such an example.
