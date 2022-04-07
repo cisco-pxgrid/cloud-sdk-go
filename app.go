@@ -154,7 +154,7 @@ func New(config Config) (*App, error) {
 		wg:         sync.WaitGroup{},
 	}
 
-	err := app.connect()
+	err := app.connect("")
 	if err != nil {
 		log.Logger.Errorf("Failed to connect the app: %v", err)
 		return nil, err
@@ -193,7 +193,9 @@ func validateConfig(config *Config) error {
 
 // Close shuts down the App instance and releases all the resources
 func (app *App) Close() error {
-	app.conn.Disconnect()
+	if app.conn != nil {
+		app.conn.Disconnect()
+	}
 	app.wg.Wait()
 
 	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
@@ -210,7 +212,8 @@ func (app *App) Close() error {
 }
 
 // connect opens a websocket connection to pxGrid Cloud
-func (app *App) connect() error {
+// WORKAROUND provide an option to use previous subscription ID
+func (app *App) connect(subscriptionID string) error {
 	var err error
 	app.conn, err = pubsub.NewConnection(pubsub.Config{
 		GroupID: app.config.GroupID,
@@ -235,7 +238,7 @@ func (app *App) connect() error {
 		return fmt.Errorf("failed to open pubsub connect: %v", err)
 	}
 
-	err = app.conn.Subscribe(app.config.ReadStreamID, app.readStreamHandler())
+	subscriptionID, err = app.conn.Subscribe(app.config.ReadStreamID, subscriptionID, app.readStreamHandler())
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to app read stream: %v", err)
 	}
@@ -245,7 +248,19 @@ func (app *App) connect() error {
 		defer app.wg.Done()
 
 		err := <-app.conn.Error
-		app.Error <- err
+
+		if app.conn.ConsumeTimeout {
+			// WORKAROUND This is a consume timeout that requires a reconnect so messages are not missed
+			log.Logger.Warnf("Consume timeout. Reconnecting")
+			// Create new connection with the existing subscription ID
+			err = app.connect(subscriptionID)
+			// Report error if reconnect has issue. Otherwise this exits normally.
+			if err != nil {
+				app.Error <- err
+			}
+		} else {
+			app.Error <- err
+		}
 	}()
 	return nil
 }

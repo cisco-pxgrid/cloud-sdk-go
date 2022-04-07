@@ -25,19 +25,28 @@ import (
 // payload contains the message payload
 type SubscriptionCallback func(err error, id string, headers map[string]string, payload []byte)
 
+var consumeResponseTimeout = 15 * time.Second
+
 // Subscribe subscribes to a DxHub Pubsub Stream
-func (c *Connection) Subscribe(stream string, handler SubscriptionCallback) error {
+func (c *Connection) Subscribe(stream string, subscriptionID string, handler SubscriptionCallback) (string, error) {
 	c.subs.Lock()
 	defer c.subs.Unlock()
 
 	var sub *subscription
 	if _, ok := c.subs.table[stream]; ok {
-		return fmt.Errorf("Subscription for stream %s already exists", stream)
+		return "", fmt.Errorf("Subscription for stream %s already exists", stream)
 	}
 
-	id, err := c.createSubscription(stream)
-	if err != nil {
-		return fmt.Errorf("Failed to create subscription for %s: %v", stream, err)
+	var id string
+	if subscriptionID != "" {
+		id = subscriptionID
+		log.Logger.Errorf("Consume timeout. Using SubscriptionID=%s", id)
+	} else {
+		var err error
+		id, err = c.createSubscription(stream)
+		if err != nil {
+			return "", fmt.Errorf("Failed to create subscription for %s: %v", stream, err)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -54,7 +63,7 @@ func (c *Connection) Subscribe(stream string, handler SubscriptionCallback) erro
 	sub.wg.Add(1)
 	go c.subscriber(sub)
 
-	return nil
+	return id, nil
 }
 
 // Unsubscribe unsubscribes from a DxHub Pubsub Stream
@@ -63,17 +72,19 @@ func (c *Connection) Unsubscribe(stream string) error {
 	c.subs.Lock()
 	defer c.subs.Unlock()
 
-	return c.unsubscribe(stream)
+	return c.unsubscribe(stream, true)
 }
 
-func (c *Connection) unsubscribe(stream string) error {
+func (c *Connection) unsubscribe(stream string, deleteSub bool) error {
 	sub, ok := c.subs.table[stream]
 	if !ok {
 		return fmt.Errorf("Subscription for stream %s doesn't exist", stream)
 	}
-	err := c.deleteSubscription(sub.id)
-	if err != nil {
-		return fmt.Errorf("Failed to unsubscribe from stream %s: %v", stream, err)
+	if deleteSub {
+		err := c.deleteSubscription(sub.id)
+		if err != nil {
+			return fmt.Errorf("Failed to unsubscribe from stream %s: %v", stream, err)
+		}
 	}
 
 	delete(c.subs.table, stream)
@@ -110,7 +121,6 @@ type subscription struct {
 
 // subscriber goroutine is spawned for each subscription to a stream
 func (c *Connection) subscriber(sub *subscription) {
-	consumeResponseTimeout := 5 * time.Second
 	defer sub.wg.Done()
 	defer c.wg.Done()
 	log.Logger.Debugf("Starting subscriber thread for %s", sub.stream)
@@ -150,9 +160,12 @@ loop:
 					}
 				}
 			case <-time.After(consumeResponseTimeout):
-				// Do not wait indefinitely for the consume response
-				log.Logger.Debugf("Did not receive consume response within timeout, trying again...")
-				break
+				// WORKAROUND Consume timeout causes message drop. Workaround by reconnect
+				log.Logger.Warnf("Consume timeout. Disconnecting")
+				c.ConsumeTimeout = true
+				// This requires a go routine otherwise the waitgroup blocks forever
+				go c.Disconnect()
+				break loop
 			case <-sub.ctx.Done():
 				// user unsubscribed from the stream
 				break loop

@@ -78,6 +78,7 @@ var (
 		pubsub:        "/api/v2/pubsub",
 	}
 	maxMessageSize int64 = 51 * 1024 * 1024 // 51mb. DxHub max message size is 50mb. An extra mb as a buffer.
+
 )
 
 const (
@@ -137,6 +138,15 @@ type Connection struct {
 		table      map[string]func(*rpc.Response) // map of handlers indexed by message id
 		sync.Mutex                                // lock to protect the table
 	}
+
+	// ConsumeTimeout to signify there was a consume timeout
+	// WORKAROUND This is to workaround message drop issue with cloud.
+	// Apparently, the consume response may sometimes be lost
+	// If we consume again, we will miss one message because subsequent consume
+	// is treated as confirm received of the lost one
+	// The workaround is to disconnect, reconnect and subscribe with the original subscription ID
+	// After this, the subsequent consume will return the lost response
+	ConsumeTimeout bool
 }
 
 // NewConnection creates a new connection object based on the supplied configuration.
@@ -347,6 +357,10 @@ func (c *Connection) Disconnect() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.ws == nil {
+		log.Logger.Debugf("Connection is not opened")
+		return
+	}
 	if c.isClosed() {
 		return
 	}
@@ -355,7 +369,6 @@ func (c *Connection) Disconnect() {
 	if err != nil {
 		log.Logger.Errorf("failed to send close message: %v", err)
 	}
-
 	log.Logger.Debugf("connection closing")
 	err = c.ws.Close(websocket.StatusNormalClosure, websocket.StatusNormalClosure.String())
 
@@ -376,9 +389,16 @@ func (c *Connection) closeNotify(err error) {
 		close(c.closed)
 
 		c.subs.Lock()
+		// WORKAROUND To decide if subscription needs to be deleted
+		// c.unsubscribe still needs to be called to free up other resource
+		deleteSub := true
+		if c.ConsumeTimeout {
+			log.Logger.Warnf("Consume timeout. Not deleting subscription")
+			deleteSub = false
+		}
 		for stream := range c.subs.table {
 			log.Logger.Debugf("unsubscribing from %s", stream)
-			e := c.unsubscribe(stream)
+			e := c.unsubscribe(stream, deleteSub)
 			if e != nil {
 				log.Logger.Errorf("failed to unsubscribe from stream %s: %v", stream, e)
 			}
