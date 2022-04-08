@@ -11,7 +11,7 @@ import (
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 )
 
-func (c *Connection) sendOpenMessage() error {
+func (c *internalConnection) sendOpenMessage() error {
 	req, err := rpc.NewOpenRequest(c.config.GroupID)
 	if err != nil {
 		return err
@@ -19,7 +19,7 @@ func (c *Connection) sendOpenMessage() error {
 	return c.sendControlMessage(req)
 }
 
-func (c *Connection) sendCloseMessage() error {
+func (c *internalConnection) sendCloseMessage() error {
 	req, err := rpc.NewCloseRequest(c.config.GroupID)
 	if err != nil {
 		return err
@@ -27,7 +27,7 @@ func (c *Connection) sendCloseMessage() error {
 	return c.sendControlMessage(req)
 }
 
-func (c *Connection) sendControlMessage(req *rpc.Request) error {
+func (c *internalConnection) sendControlMessage(req *rpc.Request) error {
 	log.Logger.Debugf("Sending control message: %v", req)
 	respCh := make(chan *rpc.Response, 1) // we expect 1 response back
 	err := c.sendMessage(req, func(resp *rpc.Response) {
@@ -52,7 +52,7 @@ func (c *Connection) sendControlMessage(req *rpc.Request) error {
 	return nil
 }
 
-func (c *Connection) sendMessage(req *rpc.Request, handler func(resp *rpc.Response)) error {
+func (c *internalConnection) sendMessage(req *rpc.Request, handler func(resp *rpc.Response)) error {
 	select {
 	case c.writerCh <- &msgRequest{req: req, handler: handler}:
 		return nil
