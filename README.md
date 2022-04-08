@@ -45,14 +45,14 @@ func activationHandler(device *sdk.Device) {
 }
 
 // deactivationHandler is invoked when the app gets deactivated for an existing device for a tenant
-func deActivationHandler(d *sdk.Device) {
+func deActivationHandler(device *sdk.Device) {
     fmt.Printf("Device deactivated: %s\n", device)
 }
 
 // messageHandler is invoked when there's a new message received by the app for a device
-func messageHandler(id string, device *sdk.Device, headers map[string]string, payload []byte) {
+func messageHandler(id string, device *sdk.Device, stream string, payload []byte) {
     fmt.Printf("Received new message (%s) from %s\n", id, device)
-    fmt.Printf("Message headers: %s\n", headers)
+    fmt.Printf("Message stream: %s\n", stream)
     fmt.Printf("Message payload: %s\n", payload)
 }
 

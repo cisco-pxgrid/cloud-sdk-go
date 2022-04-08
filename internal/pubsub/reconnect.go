@@ -12,10 +12,6 @@ import (
 )
 
 // Connection represents a connection to the DxHub PubSub server.
-// WORKAROUND This is a wrapper for original Connection
-// The original Connection is now renamed to internalConnection
-// This reconnects in case of the server message drop issue.
-// When server issue is fixed, InternalConnection will be reverted back to Connection.
 type Connection struct {
 	config        Config
 	conn          *internalConnection
@@ -33,7 +29,7 @@ type subscriptionParams struct {
 
 // NewConnection creates a new connection object based on the supplied configuration.
 func NewConnection(config Config) (*Connection, error) {
-	conn, err := NewInternalConnection(config)
+	conn, err := newInternalConnection(config)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +48,7 @@ func (c *Connection) String() string {
 
 // Connect establishes a connection to the DxHub PubSub server.
 func (c *Connection) Connect(connectCtx context.Context) error {
-	if err := c.conn.Connect(connectCtx); err != nil {
+	if err := c.conn.connect(connectCtx); err != nil {
 		return err
 	}
 	c.ctx, c.ctxCancel = context.WithCancel(context.Background())
@@ -64,18 +60,18 @@ func (c *Connection) Connect(connectCtx context.Context) error {
 func (c *Connection) Disconnect() {
 	c.ctxCancel()
 	if c.conn != nil {
-		c.conn.Disconnect()
+		c.conn.disconnect()
 	}
 }
 
 // IsDisconnected returns true if c is disconnected from the server.
 func (c *Connection) IsDisconnected() bool {
-	return c.conn.IsDisconnected()
+	return c.conn.isDisconnected()
 }
 
 // Subscribe subscribes to a DxHub Pubsub Stream
 func (c *Connection) Subscribe(stream string, handler SubscriptionCallback) error {
-	subscriptionID, err := c.conn.Subscribe(stream, "", handler)
+	subscriptionID, err := c.conn.subscribe(stream, "", handler)
 	if err != nil {
 		return err
 	}
@@ -90,7 +86,7 @@ func (c *Connection) Subscribe(stream string, handler SubscriptionCallback) erro
 
 // Unsubscribe unsubscribes from a DxHub Pubsub Stream
 func (c *Connection) Unsubscribe(stream string) error {
-	if err := c.conn.Unsubscribe(stream); err != nil {
+	if err := c.conn.unsubscribe(stream, true); err != nil {
 		return err
 	}
 	delete(c.subscriptions, stream)
@@ -108,9 +104,8 @@ func (c *Connection) PublishAsync(stream string, headers map[string]string, payl
 	return c.conn.PublishAsync(stream, headers, payload, result)
 }
 
-// errorHandler waits for error and puts it in the error channel
-// If there is message drop, ConsumeTimeout will be true,
-// it reconnects and resubscribes
+// errorHandler waits for error and puts it in the error channel.
+// If there is message drop, ConsumeTimeout will be true, it reconnects and resubscribes.
 func (c *Connection) errorHandler() {
 	var err error
 	defer func() {
@@ -120,22 +115,22 @@ func (c *Connection) errorHandler() {
 	for {
 		select {
 		case err = <-c.conn.Error:
-			if !c.conn.ConsumeTimeout {
+			if !c.conn.consumeTimeout {
 				return
 			}
 			log.Logger.Warnf("Consume timeout. Reconnecting")
 			// Create new connection and subscribe with existing subscription ID
-			c.conn, err = NewInternalConnection(c.config)
+			c.conn, err = newInternalConnection(c.config)
 			if err != nil {
 				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			if err = c.conn.Connect(ctx); err != nil {
+			if err = c.conn.connect(ctx); err != nil {
 				return
 			}
 			for _, sub := range c.subscriptions {
-				_, err = c.conn.Subscribe(sub.stream, sub.subscriptionID, sub.handler)
+				_, err = c.conn.subscribe(sub.stream, sub.subscriptionID, sub.handler)
 				if err != nil {
 					return
 				}

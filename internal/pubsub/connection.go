@@ -19,7 +19,7 @@
 //  conn.Disconnect()        // Disconnect from the server
 //
 // Subscribe
-//  conn.Subscribe("stream", func(id string, headers map[string]string, payload []byte){
+//  conn.Subscribe("stream", func(err error, id string, headers map[string]string, payload []byte){
 //      fmt.Printf("Received new message: %s, %v, %s", id, headers, payload)
 //  })
 //
@@ -139,18 +139,12 @@ type internalConnection struct {
 		sync.Mutex                                // lock to protect the table
 	}
 
-	// ConsumeTimeout to signify there was a consume timeout
-	// WORKAROUND This is to workaround message drop issue with cloud.
-	// Apparently, the consume response may sometimes be lost
-	// If we consume again, we will miss one message because subsequent consume
-	// is treated as confirm received of the lost one
-	// The workaround is to disconnect, reconnect and subscribe with the original subscription ID
-	// After this, the subsequent consume will return the lost response
-	ConsumeTimeout bool
+	// consumeTimeout to signify there was a consume timeout within subscriber
+	consumeTimeout bool
 }
 
-// NewConnection creates a new connection object based on the supplied configuration.
-func NewInternalConnection(config Config) (*internalConnection, error) {
+// newInternalConnection creates a new connection object based on the supplied configuration.
+func newInternalConnection(config Config) (*internalConnection, error) {
 	if config.GroupID == "" {
 		return nil, fmt.Errorf("Config must contain GroupID")
 	}
@@ -193,8 +187,8 @@ func (c *internalConnection) String() string {
 	return fmt.Sprintf("Conn[ID: %s, Domain: %s]", c.config.GroupID, c.config.Domain)
 }
 
-// Connect establishes a connection to the DxHub PubSub server.
-func (c *internalConnection) Connect(ctx context.Context) error {
+// connect establishes a connection to the DxHub PubSub server.
+func (c *internalConnection) connect(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -319,7 +313,7 @@ loop:
 		case <-cleaner.C:
 			// cleanup old messages for which we didn't receive any response from the server
 			for id, handler := range oldHandlersTable {
-				handler(rpc.NewErrorResponse(id, fmt.Errorf("Timed out waiting for response from server")))
+				handler(rpc.NewErrorResponse(id, fmt.Errorf("timed out waiting for response from server")))
 			}
 			c.msgHandlers.Lock()
 			oldHandlersTable = c.msgHandlers.table
@@ -352,8 +346,8 @@ func (c *internalConnection) reader() {
 	c.wg.Done()
 }
 
-// Disconnect disconnects the connection to the DxHub PubSub server.
-func (c *internalConnection) Disconnect() {
+// disconnect disconnects the connection to the DxHub PubSub server.
+func (c *internalConnection) disconnect() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -392,7 +386,7 @@ func (c *internalConnection) closeNotify(err error) {
 		// WORKAROUND To decide if subscription needs to be deleted
 		// c.unsubscribe still needs to be called to free up other resource
 		deleteSub := true
-		if c.ConsumeTimeout {
+		if c.consumeTimeout {
 			log.Logger.Warnf("Consume timeout. Not deleting subscription")
 			deleteSub = false
 		}
@@ -411,8 +405,8 @@ func (c *internalConnection) closeNotify(err error) {
 	})
 }
 
-// IsDisconnected returns true if c is disconnected from the server.
-func (c *internalConnection) IsDisconnected() bool {
+// isDisconnected returns true if c is disconnected from the server.
+func (c *internalConnection) isDisconnected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

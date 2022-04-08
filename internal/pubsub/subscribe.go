@@ -27,14 +27,14 @@ type SubscriptionCallback func(err error, id string, headers map[string]string, 
 
 var consumeResponseTimeout = 15 * time.Second
 
-// Subscribe subscribes to a DxHub Pubsub Stream
-func (c *internalConnection) Subscribe(stream string, subscriptionID string, handler SubscriptionCallback) (string, error) {
+// subscribe subscribes to a DxHub Pubsub Stream
+func (c *internalConnection) subscribe(stream string, subscriptionID string, handler SubscriptionCallback) (string, error) {
 	c.subs.Lock()
 	defer c.subs.Unlock()
 
 	var sub *subscription
 	if _, ok := c.subs.table[stream]; ok {
-		return "", fmt.Errorf("Subscription for stream %s already exists", stream)
+		return "", fmt.Errorf("subscription for stream %s already exists", stream)
 	}
 
 	var id string
@@ -45,7 +45,7 @@ func (c *internalConnection) Subscribe(stream string, subscriptionID string, han
 		var err error
 		id, err = c.createSubscription(stream)
 		if err != nil {
-			return "", fmt.Errorf("Failed to create subscription for %s: %v", stream, err)
+			return "", fmt.Errorf("failed to create subscription for %s: %v", stream, err)
 		}
 	}
 
@@ -66,24 +66,19 @@ func (c *internalConnection) Subscribe(stream string, subscriptionID string, han
 	return id, nil
 }
 
-// Unsubscribe unsubscribes from a DxHub Pubsub Stream
-func (c *internalConnection) Unsubscribe(stream string) error {
-	log.Logger.Debugf("Unsubscribing from DxHub Pubsub Stream %s", stream)
+// unsubscribe unsubscribes from a DxHub Pubsub Stream
+func (c *internalConnection) unsubscribe(stream string, deleteSub bool) error {
 	c.subs.Lock()
 	defer c.subs.Unlock()
 
-	return c.unsubscribe(stream, true)
-}
-
-func (c *internalConnection) unsubscribe(stream string, deleteSub bool) error {
 	sub, ok := c.subs.table[stream]
 	if !ok {
-		return fmt.Errorf("Subscription for stream %s doesn't exist", stream)
+		return fmt.Errorf("subscription for stream %s doesn't exist", stream)
 	}
 	if deleteSub {
 		err := c.deleteSubscription(sub.id)
 		if err != nil {
-			return fmt.Errorf("Failed to unsubscribe from stream %s: %v", stream, err)
+			return fmt.Errorf("failed to unsubscribe from stream %s: %v", stream, err)
 		}
 	}
 
@@ -162,9 +157,9 @@ loop:
 			case <-time.After(consumeResponseTimeout):
 				// WORKAROUND Consume timeout causes message drop. Workaround by reconnect
 				log.Logger.Warnf("Consume timeout. Disconnecting")
-				c.ConsumeTimeout = true
+				c.consumeTimeout = true
 				// This requires a go routine otherwise the waitgroup blocks forever
-				go c.Disconnect()
+				go c.disconnect()
 				break loop
 			case <-sub.ctx.Done():
 				// user unsubscribed from the stream
@@ -212,17 +207,17 @@ func (c *internalConnection) createSubscription(stream string) (string, error) {
 		SetResult(&subResp).
 		Post(u.String())
 	if err != nil {
-		return "", fmt.Errorf("Failed to create subscription for %s: %v", stream, err)
+		return "", fmt.Errorf("failed to create subscription for %s: %v", stream, err)
 	}
 
 	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
 		log.Logger.Errorf("Received unexpected response '%s' while creating the subscription", resp.Status())
-		return "", fmt.Errorf("Received unexpected response '%s' while creating the subscription", resp.Status())
+		return "", fmt.Errorf("received unexpected response '%s' while creating the subscription", resp.Status())
 	}
 
 	log.Logger.Debugf("Subscription created: %+v", subResp)
 	if subResp.ID == "" {
-		return "", fmt.Errorf("Received empty subscriptions ID")
+		return "", fmt.Errorf("received empty subscriptions ID")
 	}
 
 	return subResp.ID, nil
@@ -238,13 +233,13 @@ func (c *internalConnection) deleteSubscription(id string) error {
 
 	token, err := c.authHeader.provider()
 	if err != nil {
-		return fmt.Errorf("Failed to obtain auth header for subscription %s deletion: %v", id, err)
+		return fmt.Errorf("failed to obtain auth header for subscription %s deletion: %v", id, err)
 	}
 	resp, err := c.restClient.R().
 		SetHeader(c.authHeader.key, string(token)).
 		Delete(u.String())
 	if err != nil || (resp.StatusCode() < 200 && resp.StatusCode() >= 300) {
-		return fmt.Errorf("Failed to delete subscription: %v", err)
+		return fmt.Errorf("failed to delete subscription: %v", err)
 	}
 
 	return nil
