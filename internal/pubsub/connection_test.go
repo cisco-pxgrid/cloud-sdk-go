@@ -24,7 +24,7 @@ func Test_E2E(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -117,7 +117,7 @@ func Test_ConnectionError(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -137,7 +137,7 @@ func Test_ConnectionError(t *testing.T) {
 }
 
 func Test_ConnectionMissingAppName(t *testing.T) {
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		Domain: "example.com", // doesn't matter for this case
 		APIKeyProvider: func() ([]byte, error) {
 			return []byte("xyz"), nil
@@ -149,7 +149,7 @@ func Test_ConnectionMissingAppName(t *testing.T) {
 }
 
 func Test_ConnectionMissingDomain(t *testing.T) {
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-app",
 		APIKeyProvider: func() ([]byte, error) {
 			return []byte("xyz"), nil
@@ -161,7 +161,7 @@ func Test_ConnectionMissingDomain(t *testing.T) {
 }
 
 func Test_ConnectionMissingAuthProvider(t *testing.T) {
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-app",
 		Domain:  "example.com", // doesn't matter for this case
 	})
@@ -172,7 +172,7 @@ func Test_ConnectionMissingAuthProvider(t *testing.T) {
 
 func Test_AuthProviders(t *testing.T) {
 	t.Run("ApiKeyTest", func(t *testing.T) {
-		c, err := NewConnection(Config{
+		c, err := NewInternalConnection(Config{
 			GroupID: "test-app",
 			Domain:  "example.com", // doesn't matter for this case
 			APIKeyProvider: func() ([]byte, error) {
@@ -189,7 +189,7 @@ func Test_AuthProviders(t *testing.T) {
 	})
 
 	t.Run("AuthTokenTest", func(t *testing.T) {
-		c, err := NewConnection(Config{
+		c, err := NewInternalConnection(Config{
 			GroupID: "test-app",
 			Domain:  "example.com", // doesn't matter for this case
 			AuthTokenProvider: func() ([]byte, error) {
@@ -214,7 +214,7 @@ func Test_ConnectAlreadyConnected(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -238,7 +238,7 @@ func Test_ConnectAlreadyConnected(t *testing.T) {
 }
 
 func Test_ConnectAuthTokenError(t *testing.T) {
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  "example.com",
 		APIKeyProvider: func() ([]byte, error) {
@@ -263,7 +263,7 @@ func Test_ConsumeError(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -305,7 +305,7 @@ func Test_ConsumeError(t *testing.T) {
 }
 
 func Test_PublishError1(t *testing.T) {
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  "example.com",
 		APIKeyProvider: func() ([]byte, error) {
@@ -330,7 +330,7 @@ func Test_PublishError2(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -368,7 +368,7 @@ func Test_PublishAsync(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -423,7 +423,7 @@ func Test_PublishAsyncCanceled(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -480,7 +480,7 @@ func Test_ConsumeTimeout(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewConnection(Config{
+	c, err := NewInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {

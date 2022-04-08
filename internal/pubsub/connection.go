@@ -110,8 +110,8 @@ type Config struct {
 	Transport *http.Transport
 }
 
-// Connection represents a connection to the DxHub PubSub server.
-type Connection struct {
+// internalConnection represents a connection to the DxHub PubSub server.
+type internalConnection struct {
 	// Error channel should be monitored by the user for receiving error notification from the
 	// connection. If an error is sent to this channel, then the connection is already closed. Error
 	// returned from the channel shall describe the reason of connection closure. A nil value
@@ -150,7 +150,7 @@ type Connection struct {
 }
 
 // NewConnection creates a new connection object based on the supplied configuration.
-func NewConnection(config Config) (*Connection, error) {
+func NewInternalConnection(config Config) (*internalConnection, error) {
 	if config.GroupID == "" {
 		return nil, fmt.Errorf("Config must contain GroupID")
 	}
@@ -165,7 +165,7 @@ func NewConnection(config Config) (*Connection, error) {
 	if config.Transport != nil {
 		httpClient.SetTransport(config.Transport)
 	}
-	c := &Connection{
+	c := &internalConnection{
 		config:     config,
 		restClient: httpClient,
 		closed:     make(chan struct{}),
@@ -189,12 +189,12 @@ func NewConnection(config Config) (*Connection, error) {
 	return c, nil
 }
 
-func (c *Connection) String() string {
+func (c *internalConnection) String() string {
 	return fmt.Sprintf("Conn[ID: %s, Domain: %s]", c.config.GroupID, c.config.Domain)
 }
 
 // Connect establishes a connection to the DxHub PubSub server.
-func (c *Connection) Connect(ctx context.Context) error {
+func (c *internalConnection) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -246,7 +246,7 @@ func (c *Connection) Connect(ctx context.Context) error {
 }
 
 // ping pings the WebSocket server and waits for Pong
-func (c *Connection) ping() {
+func (c *internalConnection) ping() {
 	c.wg.Add(1)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), pongWait)
@@ -261,7 +261,7 @@ func (c *Connection) ping() {
 	}()
 }
 
-func (c *Connection) writer() {
+func (c *internalConnection) writer() {
 loop:
 	for {
 		select {
@@ -291,7 +291,7 @@ loop:
 
 // processor goroutine processes the incoming messages from the WebSocket connection and sends ping
 // messages when required
-func (c *Connection) processor() {
+func (c *internalConnection) processor() {
 	cleaner := time.NewTicker(3 * time.Minute)
 	var oldHandlersTable map[string]func(*rpc.Response)
 loop:
@@ -332,7 +332,7 @@ loop:
 }
 
 // reader reads messages from the WebSocket connection and passes it to processor
-func (c *Connection) reader() {
+func (c *internalConnection) reader() {
 	for {
 		msg, err := c.read(context.Background())
 		if err != nil {
@@ -353,7 +353,7 @@ func (c *Connection) reader() {
 }
 
 // Disconnect disconnects the connection to the DxHub PubSub server.
-func (c *Connection) Disconnect() {
+func (c *internalConnection) Disconnect() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -384,7 +384,7 @@ func (c *Connection) Disconnect() {
 }
 
 // closeNotify notifies other goroutines about the connection closure
-func (c *Connection) closeNotify(err error) {
+func (c *internalConnection) closeNotify(err error) {
 	c.closeOnce.Do(func() {
 		close(c.closed)
 
@@ -412,14 +412,14 @@ func (c *Connection) closeNotify(err error) {
 }
 
 // IsDisconnected returns true if c is disconnected from the server.
-func (c *Connection) IsDisconnected() bool {
+func (c *internalConnection) IsDisconnected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	return c.isClosed()
 }
 
-func (c *Connection) isClosed() bool {
+func (c *internalConnection) isClosed() bool {
 	select {
 	case <-c.closed:
 		return true
@@ -428,7 +428,7 @@ func (c *Connection) isClosed() bool {
 	}
 }
 
-func (c *Connection) checkWSError(err error) error {
+func (c *internalConnection) checkWSError(err error) error {
 	closeStatus := websocket.CloseStatus(err)
 	if closeStatus == websocket.StatusNormalClosure || closeStatus == websocket.StatusGoingAway {
 		log.Logger.Infof("PubSub connection closed by server: %v", closeStatus)
@@ -445,7 +445,7 @@ func (c *Connection) checkWSError(err error) error {
 	}
 }
 
-func (c *Connection) read(ctx context.Context) ([]byte, error) {
+func (c *internalConnection) read(ctx context.Context) ([]byte, error) {
 	_, p, err := c.ws.Read(ctx)
 	if err != nil {
 		return nil, err

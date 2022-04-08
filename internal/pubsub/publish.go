@@ -33,7 +33,7 @@ func (p *PublishResult) String() string {
 	return fmt.Sprintf("PublishResult[ID: %s, Error: %v]", p.ID, p.Error)
 }
 
-func (c *Connection) sendPublishMessage(stream string, headers map[string]string, payload string, ack *pubResultAck) (string, error) {
+func (c *internalConnection) sendPublishMessage(stream string, headers map[string]string, payload string, ack *pubResultAck) (string, error) {
 	// Create a new request for publishing the message
 	req, err := rpc.NewPublishRequest(stream, headers, payload)
 	if err != nil {
@@ -88,7 +88,7 @@ func (c *Connection) sendPublishMessage(stream string, headers map[string]string
 }
 
 // Publish publishes a message to the stream asynchronously.
-func (c *Connection) Publish(ctx context.Context, stream string, headers map[string]string, payload []byte) (*PublishResult, error) {
+func (c *internalConnection) Publish(ctx context.Context, stream string, headers map[string]string, payload []byte) (*PublishResult, error) {
 	ack := &pubResultAck{
 		ch: make(chan *PublishResult),
 	}
@@ -107,7 +107,7 @@ func (c *Connection) Publish(ctx context.Context, stream string, headers map[str
 
 // PublishAsync publishes a message to the stream asynchronously.
 // Response can be monitored on the supplied channel. The cancel function must be invoked before closing the channel.
-func (c *Connection) PublishAsync(stream string, headers map[string]string, payload []byte, result chan *PublishResult) (msgID string, cancel func(), err error) {
+func (c *internalConnection) PublishAsync(stream string, headers map[string]string, payload []byte, result chan *PublishResult) (msgID string, cancel func(), err error) {
 	ack := &pubResultAck{
 		ch: result,
 	}

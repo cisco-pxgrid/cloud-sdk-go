@@ -28,7 +28,7 @@ type SubscriptionCallback func(err error, id string, headers map[string]string, 
 var consumeResponseTimeout = 15 * time.Second
 
 // Subscribe subscribes to a DxHub Pubsub Stream
-func (c *Connection) Subscribe(stream string, subscriptionID string, handler SubscriptionCallback) (string, error) {
+func (c *internalConnection) Subscribe(stream string, subscriptionID string, handler SubscriptionCallback) (string, error) {
 	c.subs.Lock()
 	defer c.subs.Unlock()
 
@@ -67,7 +67,7 @@ func (c *Connection) Subscribe(stream string, subscriptionID string, handler Sub
 }
 
 // Unsubscribe unsubscribes from a DxHub Pubsub Stream
-func (c *Connection) Unsubscribe(stream string) error {
+func (c *internalConnection) Unsubscribe(stream string) error {
 	log.Logger.Debugf("Unsubscribing from DxHub Pubsub Stream %s", stream)
 	c.subs.Lock()
 	defer c.subs.Unlock()
@@ -75,7 +75,7 @@ func (c *Connection) Unsubscribe(stream string) error {
 	return c.unsubscribe(stream, true)
 }
 
-func (c *Connection) unsubscribe(stream string, deleteSub bool) error {
+func (c *internalConnection) unsubscribe(stream string, deleteSub bool) error {
 	sub, ok := c.subs.table[stream]
 	if !ok {
 		return fmt.Errorf("Subscription for stream %s doesn't exist", stream)
@@ -94,7 +94,7 @@ func (c *Connection) unsubscribe(stream string, deleteSub bool) error {
 	return nil
 }
 
-func (c *Connection) sendConsumeMessage(subscriptionId, consumeCtx string) (<-chan *rpc.Response, error) {
+func (c *internalConnection) sendConsumeMessage(subscriptionId, consumeCtx string) (<-chan *rpc.Response, error) {
 	req, err := rpc.NewConsumeRequest(subscriptionId, consumeCtx)
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ type subscription struct {
 }
 
 // subscriber goroutine is spawned for each subscription to a stream
-func (c *Connection) subscriber(sub *subscription) {
+func (c *internalConnection) subscriber(sub *subscription) {
 	defer sub.wg.Done()
 	defer c.wg.Done()
 	log.Logger.Debugf("Starting subscriber thread for %s", sub.stream)
@@ -190,7 +190,7 @@ type subscriptionResp struct {
 	ID string `json:"_id"`
 }
 
-func (c *Connection) createSubscription(stream string) (string, error) {
+func (c *internalConnection) createSubscription(stream string) (string, error) {
 	subReq := subscriptionReq{
 		GroupID: c.config.GroupID,
 		Streams: []string{stream},
@@ -228,7 +228,7 @@ func (c *Connection) createSubscription(stream string) (string, error) {
 	return subResp.ID, nil
 }
 
-func (c *Connection) deleteSubscription(id string) error {
+func (c *internalConnection) deleteSubscription(id string) error {
 	log.Logger.Debugf("Deleting subscription '%s'", id)
 	u := url.URL{
 		Scheme: httpScheme,

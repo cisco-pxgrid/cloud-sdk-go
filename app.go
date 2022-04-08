@@ -238,7 +238,7 @@ func (app *App) connect(subscriptionID string) error {
 		return fmt.Errorf("failed to open pubsub connect: %v", err)
 	}
 
-	subscriptionID, err = app.conn.Subscribe(app.config.ReadStreamID, subscriptionID, app.readStreamHandler())
+	err = app.conn.Subscribe(app.config.ReadStreamID, app.readStreamHandler())
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to app read stream: %v", err)
 	}
@@ -248,19 +248,7 @@ func (app *App) connect(subscriptionID string) error {
 		defer app.wg.Done()
 
 		err := <-app.conn.Error
-
-		if app.conn.ConsumeTimeout {
-			// WORKAROUND This is a consume timeout that requires a reconnect so messages are not missed
-			log.Logger.Warnf("Consume timeout. Reconnecting")
-			// Create new connection with the existing subscription ID
-			err = app.connect(subscriptionID)
-			// Report error if reconnect has issue. Otherwise this exits normally.
-			if err != nil {
-				app.Error <- err
-			}
-		} else {
-			app.Error <- err
-		}
+		app.Error <- err
 	}()
 	return nil
 }
