@@ -392,7 +392,7 @@ func (c *internalConnection) closeNotify(err error) {
 		}
 		for stream := range c.subs.table {
 			log.Logger.Debugf("unsubscribing from %s", stream)
-			e := c.unsubscribe(stream, deleteSub)
+			e := c.unsubscribeWithoutLock(stream, deleteSub)
 			if e != nil {
 				log.Logger.Errorf("failed to unsubscribe from stream %s: %v", stream, e)
 			}

@@ -66,11 +66,16 @@ func (c *internalConnection) subscribe(stream string, subscriptionID string, han
 	return id, nil
 }
 
-// unsubscribe unsubscribes from a DxHub Pubsub Stream
-func (c *internalConnection) unsubscribe(stream string, deleteSub bool) error {
+func (c *internalConnection) unsubscribe(stream string) error {
+	log.Logger.Debugf("Unsubscribing from DxHub Pubsub Stream %s", stream)
 	c.subs.Lock()
 	defer c.subs.Unlock()
 
+	return c.unsubscribeWithoutLock(stream, true)
+}
+
+// unsubscribeWithoutLock unsubscribes from a DxHub Pubsub Stream
+func (c *internalConnection) unsubscribeWithoutLock(stream string, deleteSub bool) error {
 	sub, ok := c.subs.table[stream]
 	if !ok {
 		return fmt.Errorf("subscription for stream %s doesn't exist", stream)

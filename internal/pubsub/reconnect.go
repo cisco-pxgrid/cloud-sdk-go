@@ -86,7 +86,7 @@ func (c *Connection) Subscribe(stream string, handler SubscriptionCallback) erro
 
 // Unsubscribe unsubscribes from a DxHub Pubsub Stream
 func (c *Connection) Unsubscribe(stream string) error {
-	if err := c.conn.unsubscribe(stream, true); err != nil {
+	if err := c.conn.unsubscribe(stream); err != nil {
 		return err
 	}
 	delete(c.subscriptions, stream)
