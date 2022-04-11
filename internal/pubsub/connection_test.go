@@ -24,7 +24,7 @@ func Test_E2E(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -39,7 +39,7 @@ func Test_E2E(t *testing.T) {
 		InsecureSkipVerify: true, // no verification for test server
 	})
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	require.NoError(t, err)
 
 	// 5 subscriptions
@@ -51,7 +51,7 @@ func Test_E2E(t *testing.T) {
 		receivedMu.Lock()
 		receivedMsgs[stream] = 0
 		receivedMu.Unlock()
-		_, err = c.Subscribe(stream, "",
+		_, err = c.subscribe(stream, "",
 			func(e error, id string, _ map[string]string, payload []byte) {
 				t.Logf("Received message: %s, payload: %s", id, payload)
 				receivedMu.Lock()
@@ -93,8 +93,8 @@ func Test_E2E(t *testing.T) {
 		receivedMu.Unlock()
 	}
 
-	c.Disconnect()
-	assert.Equal(t, true, c.IsDisconnected(), "Connection is still connected")
+	c.disconnect()
+	assert.Equal(t, true, c.isDisconnected(), "Connection is still connected")
 
 	t.Logf("subs table: %#v", c.subs.table)
 	assert.Zero(t, len(c.subs.table))
@@ -117,7 +117,7 @@ func Test_ConnectionError(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -132,12 +132,12 @@ func Test_ConnectionError(t *testing.T) {
 		InsecureSkipVerify: true, // no verification for test server
 	})
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	assert.Error(t, err, "Did not receive expected error")
 }
 
 func Test_ConnectionMissingAppName(t *testing.T) {
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		Domain: "example.com", // doesn't matter for this case
 		APIKeyProvider: func() ([]byte, error) {
 			return []byte("xyz"), nil
@@ -149,7 +149,7 @@ func Test_ConnectionMissingAppName(t *testing.T) {
 }
 
 func Test_ConnectionMissingDomain(t *testing.T) {
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-app",
 		APIKeyProvider: func() ([]byte, error) {
 			return []byte("xyz"), nil
@@ -161,7 +161,7 @@ func Test_ConnectionMissingDomain(t *testing.T) {
 }
 
 func Test_ConnectionMissingAuthProvider(t *testing.T) {
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-app",
 		Domain:  "example.com", // doesn't matter for this case
 	})
@@ -172,7 +172,7 @@ func Test_ConnectionMissingAuthProvider(t *testing.T) {
 
 func Test_AuthProviders(t *testing.T) {
 	t.Run("ApiKeyTest", func(t *testing.T) {
-		c, err := NewInternalConnection(Config{
+		c, err := newInternalConnection(Config{
 			GroupID: "test-app",
 			Domain:  "example.com", // doesn't matter for this case
 			APIKeyProvider: func() ([]byte, error) {
@@ -189,7 +189,7 @@ func Test_AuthProviders(t *testing.T) {
 	})
 
 	t.Run("AuthTokenTest", func(t *testing.T) {
-		c, err := NewInternalConnection(Config{
+		c, err := newInternalConnection(Config{
 			GroupID: "test-app",
 			Domain:  "example.com", // doesn't matter for this case
 			AuthTokenProvider: func() ([]byte, error) {
@@ -214,7 +214,7 @@ func Test_ConnectAlreadyConnected(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -229,16 +229,16 @@ func Test_ConnectAlreadyConnected(t *testing.T) {
 		InsecureSkipVerify: true, // no verification for test server
 	})
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	require.NoError(t, err)
-	defer c.Disconnect()
+	defer c.disconnect()
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	require.Error(t, err, "Did not receive expected error")
 }
 
 func Test_ConnectAuthTokenError(t *testing.T) {
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  "example.com",
 		APIKeyProvider: func() ([]byte, error) {
@@ -249,7 +249,7 @@ func Test_ConnectAuthTokenError(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, c)
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	require.Error(t, err, "Did not receive expected error")
 }
 
@@ -263,7 +263,7 @@ func Test_ConsumeError(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -277,11 +277,11 @@ func Test_ConsumeError(t *testing.T) {
 		InsecureSkipVerify: true, // no verification for test server
 	})
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	require.NoError(t, err)
 
 	count := 0
-	_, err = c.Subscribe("test-stream", "",
+	_, err = c.subscribe("test-stream", "",
 		func(e error, _ string, _ map[string]string, _ []byte) {
 			t.Logf("Got error: %v", e)
 			assert.Error(t, e)
@@ -297,15 +297,15 @@ func Test_ConsumeError(t *testing.T) {
 	assert.NoError(t, err)
 	time.Sleep(2 * time.Second)
 
-	c.Disconnect()
+	c.disconnect()
 
-	assert.True(t, c.IsDisconnected())
+	assert.True(t, c.isDisconnected())
 	assert.Zero(t, len(c.subs.table))
 	assert.Zero(t, count)
 }
 
 func Test_PublishError1(t *testing.T) {
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  "example.com",
 		APIKeyProvider: func() ([]byte, error) {
@@ -330,7 +330,7 @@ func Test_PublishError2(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -344,7 +344,7 @@ func Test_PublishError2(t *testing.T) {
 		InsecureSkipVerify: true, // no verification for test server
 	})
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -353,9 +353,9 @@ func Test_PublishError2(t *testing.T) {
 	require.NoError(t, err)
 	require.Error(t, r.Error)
 
-	c.Disconnect()
+	c.disconnect()
 
-	assert.True(t, c.IsDisconnected())
+	assert.True(t, c.isDisconnected())
 	assert.Zero(t, len(c.subs.table))
 }
 
@@ -368,7 +368,7 @@ func Test_PublishAsync(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -382,11 +382,11 @@ func Test_PublishAsync(t *testing.T) {
 		InsecureSkipVerify: true, // no verification for test server
 	})
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	require.NoError(t, err)
 
 	count := 0
-	_, err = c.Subscribe("test-stream", "",
+	_, err = c.subscribe("test-stream", "",
 		func(e error, id string, _ map[string]string, payload []byte) {
 			assert.NoError(t, e)
 			t.Logf("Received message %s: %s", id, payload)
@@ -407,9 +407,9 @@ func Test_PublishAsync(t *testing.T) {
 	}
 	cancel()
 
-	c.Disconnect()
+	c.disconnect()
 
-	assert.True(t, c.IsDisconnected())
+	assert.True(t, c.isDisconnected())
 	assert.Zero(t, len(c.subs.table))
 	assert.Equal(t, 1, count)
 }
@@ -423,7 +423,7 @@ func Test_PublishAsyncCanceled(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -437,11 +437,11 @@ func Test_PublishAsyncCanceled(t *testing.T) {
 		InsecureSkipVerify: true, // no verification for test server
 	})
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	require.NoError(t, err)
 
 	count := 0
-	_, err = c.Subscribe("test-stream", "",
+	_, err = c.subscribe("test-stream", "",
 		func(e error, id string, _ map[string]string, payload []byte) {
 			assert.NoError(t, e)
 			t.Logf("Received message %s: %s", id, payload)
@@ -460,9 +460,9 @@ func Test_PublishAsyncCanceled(t *testing.T) {
 	case <-time.After(time.Second):
 	}
 
-	c.Disconnect()
+	c.disconnect()
 
-	assert.True(t, c.IsDisconnected())
+	assert.True(t, c.isDisconnected())
 	assert.Zero(t, len(c.subs.table))
 	assert.Equal(t, 1, count)
 }
@@ -480,7 +480,7 @@ func Test_ConsumeTimeout(t *testing.T) {
 
 	u, _ := url.Parse(s.URL)
 
-	c, err := NewInternalConnection(Config{
+	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
 		APIKeyProvider: func() ([]byte, error) {
@@ -494,10 +494,10 @@ func Test_ConsumeTimeout(t *testing.T) {
 		InsecureSkipVerify: true, // no verification for test server
 	})
 
-	err = c.Connect(context.Background())
+	err = c.connect(context.Background())
 	require.NoError(t, err)
 
-	_, err = c.Subscribe("test-stream", "",
+	_, err = c.subscribe("test-stream", "",
 		func(_ error, _ string, _ map[string]string, _ []byte) {
 			require.Fail(t, "Unexpected message")
 		})
@@ -505,9 +505,9 @@ func Test_ConsumeTimeout(t *testing.T) {
 
 	select {
 	case <-c.Error:
-		require.True(t, c.ConsumeTimeout)
+		require.True(t, c.consumeTimeout)
 	case <-time.After(5 * time.Second):
 		require.Fail(t, "Error expected")
 	}
-	c.Disconnect()
+	c.disconnect()
 }

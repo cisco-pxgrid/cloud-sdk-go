@@ -36,7 +36,7 @@ func (c *internalConnection) sendControlMessage(req *rpc.Request) error {
 		close(respCh)
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to send request %v: %v", req, err)
+		return fmt.Errorf("failed to send request %v: %v", req, err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
