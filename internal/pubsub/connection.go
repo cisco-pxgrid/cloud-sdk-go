@@ -387,7 +387,7 @@ func (c *internalConnection) closeNotify(err error) {
 		// c.unsubscribe still needs to be called to free up other resource
 		deleteSub := true
 		if c.consumeTimeout {
-			log.Logger.Warnf("Consume timeout. Not deleting subscription")
+			log.Logger.Infof("Consume timeout. Not deleting subscription as reconnect will reuse")
 			deleteSub = false
 		}
 		for stream := range c.subs.table {

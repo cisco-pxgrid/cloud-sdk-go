@@ -385,12 +385,12 @@ func Test_PublishAsync(t *testing.T) {
 	err = c.connect(context.Background())
 	require.NoError(t, err)
 
-	count := 0
+	subCh := make(chan []byte)
 	_, err = c.subscribe("test-stream", "",
 		func(e error, id string, _ map[string]string, payload []byte) {
 			assert.NoError(t, e)
 			t.Logf("Received message %s: %s", id, payload)
-			count++
+			subCh <- payload
 		})
 	assert.NoError(t, err)
 
@@ -403,15 +403,21 @@ func Test_PublishAsync(t *testing.T) {
 		require.Equal(t, id, r.ID)
 		require.NoError(t, r.Error)
 	case <-time.After(time.Second):
-		assert.FailNow(t, "timed out")
+		assert.FailNow(t, "Publish timed out")
 	}
 	cancel()
+
+	select {
+	case payload := <-subCh:
+		require.Equal(t, payload, []byte("test payload"))
+	case <-time.After(time.Second):
+		assert.FailNow(t, "Consume timed out")
+	}
 
 	c.disconnect()
 
 	assert.True(t, c.isDisconnected())
 	assert.Zero(t, len(c.subs.table))
-	assert.Equal(t, 1, count)
 }
 
 func Test_PublishAsyncCanceled(t *testing.T) {

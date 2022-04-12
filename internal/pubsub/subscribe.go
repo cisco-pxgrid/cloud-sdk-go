@@ -40,13 +40,14 @@ func (c *internalConnection) subscribe(stream string, subscriptionID string, han
 	var id string
 	if subscriptionID != "" {
 		id = subscriptionID
-		log.Logger.Errorf("Consume timeout. Using SubscriptionID=%s", id)
+		log.Logger.Infof("Reuse subscription ID=%s", id)
 	} else {
 		var err error
 		id, err = c.createSubscription(stream)
 		if err != nil {
 			return "", fmt.Errorf("failed to create subscription for %s: %v", stream, err)
 		}
+		log.Logger.Infof("Created subscription ID=%s", id)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -160,7 +161,7 @@ loop:
 					}
 				}
 			case <-time.After(consumeResponseTimeout):
-				// WORKAROUND Consume timeout causes message drop. Workaround by reconnect
+				// Consume timeout. Disconnect will trigger reconnect.
 				log.Logger.Warnf("Consume timeout. Disconnecting")
 				c.consumeTimeout = true
 				// This requires a go routine otherwise the waitgroup blocks forever
