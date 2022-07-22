@@ -135,6 +135,34 @@ if err != nil {
 }
 ```
 
+### Invoke pxGrid API on a device
+[pxGrid Reference](https://github.com/cisco-pxgrid/pxgrid-rest-ws/wiki)
+
+In order to invoke pxGrid APIs directly on the device, ServiceLookup is not required.
+Instead map the service name to the keyword and append it to the URL along with pxgrid
+
+    -----------------------------------------------------------
+    | pxGrid Service                   | pxGrid Cloud Service |
+    |----------------------------------|----------------------|
+    | com.cisco.ise.session            | session              |
+    | com.cisco.ise.config.anc         | anc                  |
+    | com.cisco.ise.mdm                | mdm                  |
+    | com.cisco.ise.config.profiler    | profiler             |
+    | com.cisco.ise.radius             | radius               |
+    | com.cisco.ise.trustsec           | trustsec             |
+    | com.cisco.ise.config.trustsec    | trustsec             |
+    | com.cisco.ise.sxp                | trustsec             |
+    | com.cisco.ise.echo               | echo                 |
+    -----------------------------------------------------------
+
+```go
+req, _ := http.NewRequest(http.MethodGet, "/pxgrid/trustsec/getSecurityGroups", nil)
+resp, err := device.Query(req)
+if err != nil {
+    fmt.Printf("Failed to invoke %s on %s: %v", req, device, err)
+}
+```
+
 ## Terminology
 
 - `App`: An app represents an application that's available on the Cisco DNA - Cloud App Store.
