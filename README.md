@@ -16,7 +16,7 @@ OpenAPI services from Cisco Identity Services Engine (ISE) devices.
 - Create an instance of an application
 - Link application with a Cisco DNA - Cloud tenant
 - Receive pxGrid topic messages from Cisco ISE devices
-- Invoke REST APIs on Cisco ISE devices
+- Invoke HTTP APIs on Cisco ISE devices
     + pxGrid APIs
     + ERS APIs
     + OpenAPI APIs
@@ -125,7 +125,11 @@ if err != nil {
 }
 ```
 
-### Invoke a REST API call on a device
+### Invoke an ERS or OpenAPI HTTP API call on a device
+
+ERS and OpenAPI URLs start with "/ers" and "/api" respectively.
+
+[API guide and reference](https://developer.cisco.com/docs/identity-services-engine/latest/#!cisco-ise-api-framework)
 
 ```go
 req, _ := http.NewRequest(http.MethodGet, "/ers/config/op/systemconfig/iseversion", nil)
@@ -135,7 +139,7 @@ if err != nil {
 }
 ```
 
-### Invoke pxGrid API on a device
+### Invoke pxGrid HTTP API on a device
 [pxGrid Reference](https://github.com/cisco-pxgrid/pxgrid-rest-ws/wiki)
 
 In order to invoke pxGrid APIs directly on the device, ServiceLookup is not required.
@@ -156,7 +160,7 @@ Instead map the service name to the keyword and append it to the URL along with 
     -----------------------------------------------------------
 
 ```go
-req, _ := http.NewRequest(http.MethodGet, "/pxgrid/trustsec/getSecurityGroups", nil)
+req, _ := http.NewRequest(http.MethodPost, "/pxgrid/trustsec/getSecurityGroups", nil)
 resp, err := device.Query(req)
 if err != nil {
     fmt.Printf("Failed to invoke %s on %s: %v", req, device, err)
