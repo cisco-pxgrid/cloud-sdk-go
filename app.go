@@ -1,4 +1,4 @@
-package cloud
+package main
 
 import (
 	"context"
@@ -160,6 +160,33 @@ func New(config Config) (*App, error) {
 		return nil, err
 	}
 
+	app.wg.Add(1)
+	go func() {
+		defer app.wg.Done()
+		var reconnectDelay = 1
+
+		//loop to call app.connect with a reconnect delay with gradual backoff
+		for {
+			select {
+			case err = <-app.conn.Error:
+				//app.Error is just a channel to report errors. Developer can simply log it or ignore it.
+				//app.Error channel as non-blocking
+				app.Error <- err
+				time.Sleep(time.Second * time.Duration(reconnectDelay))
+
+				err := app.connect("")
+				if err != nil {
+					reconnectDelay += 1
+					app.conn.Error <- err
+					continue
+				}
+				//obtain the device list again when reconnected
+				app.reloadTenantsDevices()
+				reconnectDelay = 1
+			}
+		}
+	}()
+
 	return app, nil
 }
 
@@ -242,14 +269,6 @@ func (app *App) connect(subscriptionID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to app read stream: %v", err)
 	}
-
-	app.wg.Add(1)
-	go func() {
-		defer app.wg.Done()
-
-		err := <-app.conn.Error
-		app.Error <- err
-	}()
 	return nil
 }
 
@@ -506,4 +525,28 @@ func (app *App) setTenant(tenant *Tenant) error {
 	app.deviceMap.Store(tenant.id, &deviceMapInternal)
 
 	return nil
+}
+
+func (app *App) reloadTenantsDevices() {
+	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
+		tenant, ok := app.tenantMap.Load(key)
+		if !ok || tenant == nil {
+			return false
+		}
+		devices, err := tenant.(*Tenant).getDevices()
+		if err != nil {
+			return false
+		}
+		deviceMapInternal := sync.Map{}
+		for i := range devices {
+			device := &devices[i]
+			device.tenant = tenant.(*Tenant)
+			deviceMapInternal.Store(device.id, device)
+			if app.config.DeviceActivationHandler != nil {
+				app.config.DeviceActivationHandler(device)
+			}
+		}
+		app.deviceMap.Store(tenant.(*Tenant).id, &deviceMapInternal)
+		return true
+	})
 }
