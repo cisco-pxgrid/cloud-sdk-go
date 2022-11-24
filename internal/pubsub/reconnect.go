@@ -58,7 +58,9 @@ func (c *Connection) Connect(connectCtx context.Context) error {
 
 // Disconnect disconnects the connection to the DxHub PubSub server.
 func (c *Connection) Disconnect() {
-	c.ctxCancel()
+	if c.ctx != nil {
+		c.ctxCancel()
+	}
 	if c.conn != nil {
 		c.conn.disconnect()
 	}
