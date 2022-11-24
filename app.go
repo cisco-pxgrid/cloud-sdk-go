@@ -161,7 +161,10 @@ func New(config Config) (*App, error) {
 	app.wg.Add(1)
 	go func() {
 		defer app.wg.Done()
-		var reconnectDelay int64 = 1
+		backoffFactor := 0
+		maxbackoffFactor := 3
+		reconnectBackoff := 30 * time.Second
+		reconnectDelay := 30 * time.Second
 
 		//loop to call app.connect with a reconnect delay with gradual backoff
 		for {
@@ -173,8 +176,8 @@ func New(config Config) (*App, error) {
 			} else {
 				//obtain the device list
 				app.loadTenantsDevices()
-				//reset reconnect delay for successful connection
-				reconnectDelay = 1
+				//reset backoff factor for successful connection
+				backoffFactor = 0
 
 				select {
 				case err = <-app.conn.Error:
@@ -186,9 +189,11 @@ func New(config Config) (*App, error) {
 			}
 
 			select {
-			case <-time.After(time.Duration(reconnectDelay) * time.Second):
-				//increment reconnect delay by 1 for gradual backoff
-				reconnectDelay += 1
+			case <-time.After(reconnectDelay + reconnectBackoff*time.Duration(backoffFactor)):
+				//increment backoff factor by 1 for gradual backoff
+				if backoffFactor < maxbackoffFactor {
+					backoffFactor += 1
+				}
 			case <-app.ctx.Done():
 				return
 			}
