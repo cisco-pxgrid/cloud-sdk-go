@@ -44,7 +44,7 @@ var tlsConfig = tls.Config{
 // Credentials required to be stored securely
 type Credentials struct {
 	// ApiKey is obtained during app onboarding with dragonfly
-	// ApiKey will be zeroed after use, therefore AppConfig.GetCredentials function should provide new structure every invocation
+	// ApiKey will be not zeroed since it is required for reconnect
 	ApiKey []byte
 }
 
@@ -137,7 +137,6 @@ func New(config Config) (*App, error) {
 			}
 
 			request.SetHeader("X-API-KEY", string(credentials.ApiKey))
-			zeroByteArray(credentials.ApiKey)
 			return nil
 		})
 
