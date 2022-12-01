@@ -105,8 +105,10 @@ type App struct {
 	deviceMap sync.Map
 
 	// Error channel should be used to monitor any errors
-	Error chan error
-	wg    sync.WaitGroup
+	Error     chan error
+	wg        sync.WaitGroup
+	ctx       context.Context
+	ctxCancel context.CancelFunc
 }
 
 func (app *App) String() string {
@@ -154,12 +156,49 @@ func New(config Config) (*App, error) {
 		wg:         sync.WaitGroup{},
 	}
 
-	err := app.connect("")
-	if err != nil {
-		log.Logger.Errorf("Failed to connect the app: %v", err)
-		return nil, err
-	}
+	app.ctx, app.ctxCancel = context.WithCancel(context.Background())
 
+	app.wg.Add(1)
+	go func() {
+		defer app.wg.Done()
+		backoffFactor := 0
+		maxbackoffFactor := 3
+		reconnectBackoff := 30 * time.Second
+		reconnectDelay := 30 * time.Second
+
+		//loop to call app.connect with a reconnect delay with gradual backoff
+		for {
+			err := app.connect("")
+			if err != nil {
+				log.Logger.Errorf("Failed to connect the app: %v", err)
+				app.close()
+				app.reportError(err)
+			} else {
+				//obtain the device list
+				app.loadTenantsDevices()
+				//reset backoff factor for successful connection
+				backoffFactor = 0
+
+				select {
+				case err = <-app.conn.Error:
+					app.close()
+					app.reportError(err)
+				case <-app.ctx.Done():
+					return
+				}
+			}
+
+			select {
+			case <-time.After(reconnectDelay + reconnectBackoff*time.Duration(backoffFactor)):
+				//increment backoff factor by 1 for gradual backoff
+				if backoffFactor < maxbackoffFactor {
+					backoffFactor += 1
+				}
+			case <-app.ctx.Done():
+				return
+			}
+		}
+	}()
 	return app, nil
 }
 
@@ -196,7 +235,36 @@ func (app *App) Close() error {
 	if app.conn != nil {
 		app.conn.Disconnect()
 	}
+	app.ctxCancel()
 	app.wg.Wait()
+
+	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
+		app.tenantMap.Delete(key)
+		return true
+	})
+
+	app.deviceMap.Range(func(key interface{}, _ interface{}) bool {
+		app.deviceMap.Delete(key)
+		return true
+	})
+
+	return nil
+}
+
+//Report error to app.Error as non-blocking channel
+func (app *App) reportError(err error) {
+	select {
+	case app.Error <- err:
+	default:
+		log.Logger.Warnf("Error message was not sent as the channel was not available")
+	}
+}
+
+// Close shuts down the App instance and releases all the resources
+func (app *App) close() error {
+	if app.conn != nil {
+		app.conn.Disconnect()
+	}
 
 	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
 		app.tenantMap.Delete(key)
@@ -242,14 +310,6 @@ func (app *App) connect(subscriptionID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to app read stream: %v", err)
 	}
-
-	app.wg.Add(1)
-	go func() {
-		defer app.wg.Done()
-
-		err := <-app.conn.Error
-		app.Error <- err
-	}()
 	return nil
 }
 
@@ -506,4 +566,28 @@ func (app *App) setTenant(tenant *Tenant) error {
 	app.deviceMap.Store(tenant.id, &deviceMapInternal)
 
 	return nil
+}
+
+func (app *App) loadTenantsDevices() {
+	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
+		tenant, ok := app.tenantMap.Load(key)
+		if !ok || tenant == nil {
+			return false
+		}
+		devices, err := tenant.(*Tenant).getDevices()
+		if err != nil {
+			return false
+		}
+		deviceMapInternal := sync.Map{}
+		for i := range devices {
+			device := &devices[i]
+			device.tenant = tenant.(*Tenant)
+			deviceMapInternal.Store(device.id, device)
+			if app.config.DeviceActivationHandler != nil {
+				app.config.DeviceActivationHandler(device)
+			}
+		}
+		app.deviceMap.Store(tenant.(*Tenant).id, &deviceMapInternal)
+		return true
+	})
 }

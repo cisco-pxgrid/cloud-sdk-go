@@ -66,9 +66,6 @@ func (suite *AppTestSuite) SetupTest() {
 	})
 	u, _ := url.Parse(s.URL)
 
-	credentials := Credentials{
-		ApiKey: []byte("xyz"),
-	}
 	suite.config = Config{
 		ID:            "appId",
 		RegionalFQDN:  u.Host,
@@ -76,7 +73,9 @@ func (suite *AppTestSuite) SetupTest() {
 		WriteStreamID: "writeStream",
 		ReadStreamID:  "readStream",
 		GetCredentials: func() (*Credentials, error) {
-			return &credentials, nil
+			return &Credentials{
+				ApiKey: []byte("api-key-obtained-during-app-onboarding"),
+			}, nil
 		},
 		DeviceActivationHandler: func(device *Device) {
 		},
