@@ -11,6 +11,7 @@ require (
 	github.com/klauspost/compress v1.15.1 // indirect
 	github.com/stretchr/testify v1.7.1
 	golang.org/x/net v0.0.0-20220403103023-749bd193bc2b // indirect
+	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 	nhooyr.io/websocket v1.8.7
 )
