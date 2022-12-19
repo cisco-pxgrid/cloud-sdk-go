@@ -1,0 +1,52 @@
+# github.com/davecgh/go-spew v1.1.1
+github.com/davecgh/go-spew/spew
+# github.com/go-chi/chi/v5 v5.0.7
+## explicit
+github.com/go-chi/chi/v5
+# github.com/go-resty/resty/v2 v2.7.0
+## explicit
+github.com/go-resty/resty/v2
+# github.com/goccy/go-json v0.9.6
+## explicit
+github.com/goccy/go-json
+github.com/goccy/go-json/internal/decoder
+github.com/goccy/go-json/internal/encoder
+github.com/goccy/go-json/internal/encoder/vm
+github.com/goccy/go-json/internal/encoder/vm_color
+github.com/goccy/go-json/internal/encoder/vm_color_indent
+github.com/goccy/go-json/internal/encoder/vm_indent
+github.com/goccy/go-json/internal/errors
+github.com/goccy/go-json/internal/runtime
+# github.com/google/uuid v1.3.0
+## explicit
+github.com/google/uuid
+# github.com/jarcoal/httpmock v1.1.0
+## explicit
+github.com/jarcoal/httpmock
+github.com/jarcoal/httpmock/internal
+# github.com/klauspost/compress v1.15.1
+## explicit
+github.com/klauspost/compress/flate
+# github.com/pmezard/go-difflib v1.0.0
+github.com/pmezard/go-difflib/difflib
+# github.com/stretchr/testify v1.7.1
+## explicit
+github.com/stretchr/testify/assert
+github.com/stretchr/testify/require
+github.com/stretchr/testify/suite
+# golang.org/x/net v0.0.0-20220403103023-749bd193bc2b
+## explicit
+golang.org/x/net/publicsuffix
+# gopkg.in/yaml.v2 v2.4.0
+## explicit
+gopkg.in/yaml.v2
+# gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+## explicit
+gopkg.in/yaml.v3
+# nhooyr.io/websocket v1.8.7
+## explicit
+nhooyr.io/websocket
+nhooyr.io/websocket/internal/bpool
+nhooyr.io/websocket/internal/errd
+nhooyr.io/websocket/internal/wsjs
+nhooyr.io/websocket/internal/xsync
