@@ -413,7 +413,8 @@ func (app *App) dataMsgHandler(id string, headers map[string]string, payload []b
 
 	v, ok := app.deviceMap.Load(headers[tenantKey])
 	if !ok || v == nil {
-		return fmt.Errorf("tenant %s not found", headers[tenantKey])
+		log.Logger.Debugf("tenant %s not found", headers[tenantKey])
+		return nil
 	}
 	deviceMapInternal := v.(*sync.Map)
 
