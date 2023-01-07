@@ -65,12 +65,13 @@ import (
 )
 
 var (
-	defaultTimeout  = 15 * time.Second
-	pingPeriod      = 55 * time.Second
-	pongWait        = 60 * time.Second
-	webSocketScheme = "wss"
-	httpScheme      = "https"
-	apiPaths        = struct {
+	defaultTimeout      = 15 * time.Second
+	pingPeriod          = 55 * time.Second
+	pongWait            = 60 * time.Second
+	defaultPollInterval = 1 * time.Second
+	webSocketScheme     = "wss"
+	httpScheme          = "https"
+	apiPaths            = struct {
 		subscriptions string
 		pubsub        string
 	}{
@@ -104,7 +105,7 @@ type Config struct {
 	AuthTokenProvider func() ([]byte, error)
 
 	// PollInterval defines the interval between consecutive read requests to the server.
-	// Default is 500 milliseconds.
+	// Default is 1 second.
 	PollInterval time.Duration
 
 	Transport *http.Transport
@@ -152,7 +153,7 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 		return nil, fmt.Errorf("Config must contain Domain")
 	}
 	if config.PollInterval == 0 {
-		config.PollInterval = 500 * time.Millisecond
+		config.PollInterval = defaultPollInterval
 	}
 
 	httpClient := resty.New()

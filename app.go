@@ -296,19 +296,19 @@ func (app *App) connect(subscriptionID string) error {
 		Transport: app.config.Transport,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create new pubsub connection: %v", err)
+		return fmt.Errorf("failed to create pubsub connection: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	err = app.conn.Connect(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to open pubsub connect: %v", err)
+		return fmt.Errorf("failed to connect pubsub connection: %v", err)
 	}
 
 	err = app.conn.Subscribe(app.config.ReadStreamID, app.readStreamHandler())
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to app read stream: %v", err)
+		return fmt.Errorf("failed to subscribe: %v", err)
 	}
 	return nil
 }
@@ -364,23 +364,24 @@ func (app *App) controlMsgHandler(id string, payload []byte) error {
 	if err := json.Unmarshal(payload, &ctrlPayload); err != nil {
 		return fmt.Errorf("failed to unmarshal control payload: %w", err)
 	}
-	log.Logger.Infof("Received control message: %v", ctrlPayload)
+	log.Logger.Debugf("Received control message: %v", ctrlPayload)
 
 	v, ok := app.deviceMap.Load(ctrlPayload.Info.Tenant)
 	if !ok || v == nil {
-		return fmt.Errorf("failed to load device map for tenant %s", ctrlPayload.Info.Tenant)
+		log.Logger.Debugf("Unassociated tenant: %s", ctrlPayload.Info.Tenant)
+		return nil
 	}
 	deviceMap := v.(*sync.Map)
 
 	if ctrlPayload.Type == msgTypeActivate {
 		v, ok = app.tenantMap.Load(ctrlPayload.Info.Tenant)
 		if !ok || v == nil {
-			return fmt.Errorf("tenant %s not found", ctrlPayload.Info.Tenant)
+			return fmt.Errorf("unknown tenant: %s", ctrlPayload.Info.Tenant)
 		}
 		tenant := v.(*Tenant)
 		device, err := tenant.getDeviceByID(ctrlPayload.Info.Device)
 		if err != nil {
-			return fmt.Errorf("failed to fetch device information for %s: %v", ctrlPayload.Info.Device, err)
+			return fmt.Errorf("failed to get device %s info: %w", ctrlPayload.Info.Device, err)
 		}
 		if app.config.DeviceActivationHandler != nil {
 			app.config.DeviceActivationHandler(device)
@@ -390,7 +391,7 @@ func (app *App) controlMsgHandler(id string, payload []byte) error {
 	} else if ctrlPayload.Type == msgTypeDeactivate {
 		v, ok = deviceMap.Load(ctrlPayload.Info.Device)
 		if !ok || v == nil {
-			return fmt.Errorf("device %s not found", ctrlPayload.Info.Device)
+			return fmt.Errorf("unknown device: %s", ctrlPayload.Info.Device)
 		}
 		device := v.(*Device)
 		if app.config.DeviceDeactivationHandler != nil {
@@ -405,22 +406,22 @@ func (app *App) dataMsgHandler(id string, headers map[string]string, payload []b
 	log.Logger.Debugf("Received data message: %s, device: %s, tenant: %s -- %s",
 		headers[msgIDKey], headers[deviceKey], headers[tenantKey], payload)
 	if _, ok := headers[deviceKey]; !ok {
-		return fmt.Errorf("missing device id")
+		return fmt.Errorf("data missing device id")
 	}
 	if _, ok := headers[tenantKey]; !ok {
-		return fmt.Errorf("missing tenant id")
+		return fmt.Errorf("data missing tenant id")
 	}
 
 	v, ok := app.deviceMap.Load(headers[tenantKey])
 	if !ok || v == nil {
-		log.Logger.Debugf("tenant %s not found", headers[tenantKey])
+		log.Logger.Debugf("Unassociated tenant %s", headers[tenantKey])
 		return nil
 	}
 	deviceMapInternal := v.(*sync.Map)
 
 	v, ok = deviceMapInternal.Load(headers[deviceKey])
 	if !ok || v == nil {
-		return fmt.Errorf("device %s not found", headers[deviceKey])
+		return fmt.Errorf("unknown device: %s", headers[deviceKey])
 	}
 
 	device := v.(*Device)
