@@ -383,21 +383,20 @@ func (app *App) controlMsgHandler(id string, payload []byte) error {
 		if err != nil {
 			return fmt.Errorf("failed to get device %s info: %w", ctrlPayload.Info.Device, err)
 		}
+		deviceMap.Store(device.ID(), device)
 		if app.config.DeviceActivationHandler != nil {
 			app.config.DeviceActivationHandler(device)
 		}
-
-		deviceMap.Store(device.ID(), device)
 	} else if ctrlPayload.Type == msgTypeDeactivate {
 		v, ok = deviceMap.Load(ctrlPayload.Info.Device)
 		if !ok || v == nil {
 			return fmt.Errorf("unknown device: %s", ctrlPayload.Info.Device)
 		}
 		device := v.(*Device)
+		deviceMap.Delete(device.ID())
 		if app.config.DeviceDeactivationHandler != nil {
 			app.config.DeviceDeactivationHandler(device)
 		}
-		deviceMap.Delete(device.ID())
 	}
 	return nil
 }
