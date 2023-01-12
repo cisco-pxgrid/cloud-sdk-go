@@ -73,7 +73,7 @@ var (
 	defaultPollInterval = 1 * time.Second
 	handlersExpiration  = 3 * time.Minute
 	webSocketScheme     = "wss"
-	httpScheme          = "https"
+	HttpScheme          = "https"
 	apiPaths            = struct {
 		subscriptions string
 		pubsub        string

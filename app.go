@@ -117,6 +117,11 @@ type App struct {
 	startPubsubConnectOnce sync.Once
 }
 
+var (
+	defaultHTTPScheme      = "https"
+	defaultWebSocketScheme = "wss"
+)
+
 func (app *App) String() string {
 	return fmt.Sprintf("App[ID: %s, RegionalFQDN: %s]", app.config.ID, app.config.RegionalFQDN)
 }
@@ -130,7 +135,7 @@ func New(config Config) (*App, error) {
 	}
 
 	hostURL := url.URL{
-		Scheme: "https",
+		Scheme: defaultHTTPScheme,
 		Path:   url.PathEscape(config.GlobalFQDN),
 	}
 
@@ -515,7 +520,7 @@ func (app *App) setTenant(tenant *Tenant) error {
 	tenant.setHttpClient(httpClient)
 
 	regionalHostURL := url.URL{
-		Scheme: "https",
+		Scheme: defaultHTTPScheme,
 		Path:   url.PathEscape(app.config.RegionalFQDN),
 	}
 	regionalHttpClient := resty.NewWithClient(app.httpClient.GetClient()).
