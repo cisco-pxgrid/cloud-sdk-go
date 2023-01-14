@@ -47,26 +47,6 @@ const (
 // Hostname, authentication will be filled by the SDK
 // Underlying direct mode with API-Proxy
 // Context, URL, headers, body...etc can be set within request
-func (d *Device) oldQuery(request *http.Request) (*http.Response, error) {
-	queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), request.URL)
-
-	req := d.tenant.regionalHttpClient.R()
-
-	if request.Header != nil {
-		for name, values := range request.Header {
-			req.SetHeader(name, values[0])
-		}
-	}
-	req.SetHeader("X-API-PROXY-COMMUNICATION-STYLE", "sync")
-
-	req.SetBody(request.Body)
-	req.SetDoNotParseResponse(true)
-
-	response, err := req.Execute(request.Method, queryPath)
-
-	return response.RawResponse, err
-}
-
 func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	reqEnv := envelop{
 		Method:  request.Method,
@@ -94,6 +74,10 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		resp, err := req.Execute(http.MethodPost, queryPath)
 		if err != nil {
 			return nil, err
+		}
+		if resp.StatusCode() == http.StatusNotFound {
+			// Large API payload not supported by this device
+			return nil, fmt.Errorf("payload too large for this device")
 		}
 		if resp.StatusCode() != http.StatusOK {
 			return nil, fmt.Errorf("request error %s", resp.Status())

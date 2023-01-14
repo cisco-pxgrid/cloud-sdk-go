@@ -207,3 +207,35 @@ func TestStatus(t *testing.T) {
 	require.Equal(t, "object1", string(b))
 	resp.Body.Close()
 }
+
+func TestFallbackQuery(t *testing.T) {
+	ts, r, device, err := setup()
+	require.NoError(t, err)
+	defer ts.Close()
+
+	queryPath := fmt.Sprintf(directModePath, "dev1", "/api/get")
+	r.Get(queryPath, func(w http.ResponseWriter, r *http.Request) {})
+	u, _ := url.Parse("/api/get")
+	resp, err := device.Query(&http.Request{Method: http.MethodGet, URL: u})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+}
+
+func TestFallbackTooLargeQuery(t *testing.T) {
+	ts, r, device, err := setup()
+	require.NoError(t, err)
+	defer ts.Close()
+
+	// Lower max to test logic easier
+	RequestBodyMax = 10
+
+	queryPath := fmt.Sprintf(directModePath, "dev1", "/api/get")
+	r.Get(queryPath, func(w http.ResponseWriter, r *http.Request) {})
+	u, _ := url.Parse("/api/get")
+	_, err = device.Query(&http.Request{
+		Method: http.MethodGet,
+		URL:    u,
+		Body:   io.NopCloser(strings.NewReader("12345678901"))})
+	require.Error(t, err)
+}
