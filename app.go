@@ -15,6 +15,7 @@ import (
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub"
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 	"github.com/go-resty/resty/v2"
+	"github.com/google/uuid"
 )
 
 const (
@@ -67,8 +68,7 @@ type Config struct {
 
 	// GroupID defines the group in which this instance of the App belongs to. Instances that belong
 	// in the same group gets messages distributed between them. Instances that belong in separate
-	// groups get a copy of each message. If left empty, all the instances will be placed in the
-	// same group.
+	// groups get a copy of each message. If left empty, unique ID will be used.
 	//
 	// e.g. There are 3 messages on the app's stream - msg1, msg2, msg3
 	//
@@ -120,7 +120,7 @@ func (app *App) String() string {
 func New(config Config) (*App, error) {
 	if err := validateConfig(&config); err != nil {
 		log.Logger.Errorf("Invalid configuration: %v", err)
-		return nil, fmt.Errorf("Invalid configuration: %w", err)
+		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	hostURL := url.URL{
@@ -136,7 +136,7 @@ func New(config Config) (*App, error) {
 				return err
 			}
 
-			request.SetHeader("X-API-KEY", string(credentials.ApiKey))
+			request.SetHeader("X-Api-Key", string(credentials.ApiKey))
 			zeroByteArray(credentials.ApiKey)
 			return nil
 		})
@@ -224,7 +224,7 @@ func validateConfig(config *Config) error {
 	}
 
 	if config.GroupID == "" {
-		config.GroupID = config.ID
+		config.GroupID = uuid.NewString()
 	}
 
 	return nil
@@ -251,7 +251,7 @@ func (app *App) Close() error {
 	return nil
 }
 
-//Report error to app.Error as non-blocking channel
+// Report error to app.Error as non-blocking channel
 func (app *App) reportError(err error) {
 	select {
 	case app.Error <- err:

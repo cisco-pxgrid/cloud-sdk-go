@@ -117,6 +117,7 @@ func main() {
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: *insecure,
 			},
+			Proxy: http.ProxyFromEnvironment,
 		},
 	}
 	// SDK App create

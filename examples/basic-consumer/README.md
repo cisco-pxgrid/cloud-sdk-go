@@ -8,14 +8,14 @@ A basic pxGrid Cloud app to receive messages and make queries to Cisco ISE
 go build
 ```
 
-This will generate a binary named `basic` in ths current directory.
+This will generate a binary named `basic-consumer` in ths current directory.
 
 ## Run
 
 ### Show command options
 
 ```bash
-./basic -help
+./basic-consumer -help
 
 Usage of ./basic:
   -config string
