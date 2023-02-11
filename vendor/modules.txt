@@ -29,6 +29,9 @@ github.com/jarcoal/httpmock/internal
 github.com/klauspost/compress/flate
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
+# github.com/rs/xid v1.2.1
+## explicit
+github.com/rs/xid
 # github.com/stretchr/testify v1.7.1
 ## explicit
 github.com/stretchr/testify/assert

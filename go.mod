@@ -9,6 +9,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/jarcoal/httpmock v1.1.0
 	github.com/klauspost/compress v1.15.1 // indirect
+	github.com/rs/xid v1.2.1
 	github.com/stretchr/testify v1.7.1
 	golang.org/x/net v0.0.0-20220403103023-749bd193bc2b // indirect
 	gopkg.in/yaml.v2 v2.4.0
