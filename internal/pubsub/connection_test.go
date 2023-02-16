@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub/test"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,9 +56,9 @@ func Test_E2E(t *testing.T) {
 				receivedMu.Lock()
 				receivedMsgs[stream]++
 				receivedMu.Unlock()
-				assert.NoError(t, e)
+				require.NoError(t, e)
 			})
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	// publish to 5 streams simultaneously
@@ -75,7 +74,7 @@ func Test_E2E(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 				r, err := c.Publish(ctx, stream, nil, payload)
 				cancel()
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				t.Logf("Published message: %s to stream: %s, payload: %s", r.ID, stream, payload)
 			}
 		}()
@@ -89,15 +88,15 @@ func Test_E2E(t *testing.T) {
 	for i := 0; i < numSubs; i++ {
 		stream := fmt.Sprintf("test-stream-%d", i)
 		receivedMu.Lock()
-		assert.Equal(t, numMessages, receivedMsgs[stream], "Did not receive all the mssages from stream", i)
+		require.Equal(t, numMessages, receivedMsgs[stream], "Did not receive all the mssages from stream", i)
 		receivedMu.Unlock()
 	}
 
 	c.disconnect()
-	assert.Equal(t, true, c.isDisconnected(), "Connection is still connected")
+	require.Equal(t, true, c.isDisconnected(), "Connection is still connected")
 
 	t.Logf("subs table: %#v", c.subs.table)
-	assert.Zero(t, len(c.subs.table))
+	require.Zero(t, len(c.subs.table))
 
 	select {
 	case err = <-c.Error:
@@ -133,7 +132,7 @@ func Test_ConnectionError(t *testing.T) {
 	})
 
 	err = c.connect(context.Background())
-	assert.Error(t, err, "Did not receive expected error")
+	require.Error(t, err, "Did not receive expected error")
 }
 
 func Test_ConnectionMissingAppName(t *testing.T) {
@@ -143,9 +142,9 @@ func Test_ConnectionMissingAppName(t *testing.T) {
 			return []byte("xyz"), nil
 		},
 	})
-	assert.Error(t, err, "Did not receive expected error")
-	assert.Equal(t, "Config must contain GroupID", err.Error())
-	assert.Nil(t, c, "Connection is not nil")
+	require.Error(t, err, "Did not receive expected error")
+	require.Equal(t, "Config must contain GroupID", err.Error())
+	require.Nil(t, c, "Connection is not nil")
 }
 
 func Test_ConnectionMissingDomain(t *testing.T) {
@@ -155,9 +154,9 @@ func Test_ConnectionMissingDomain(t *testing.T) {
 			return []byte("xyz"), nil
 		},
 	})
-	assert.Error(t, err, "Did not receive expected error")
-	assert.Equal(t, "Config must contain Domain", err.Error())
-	assert.Nil(t, c, "Connection is not nil")
+	require.Error(t, err, "Did not receive expected error")
+	require.Equal(t, "Config must contain Domain", err.Error())
+	require.Nil(t, c, "Connection is not nil")
 }
 
 func Test_ConnectionMissingAuthProvider(t *testing.T) {
@@ -165,9 +164,9 @@ func Test_ConnectionMissingAuthProvider(t *testing.T) {
 		GroupID: "test-app",
 		Domain:  "example.com", // doesn't matter for this case
 	})
-	assert.Error(t, err, "Did not receive expected error")
-	assert.Equal(t, "Config must contain either APIKeyProvider or AuthTokenProvider", err.Error())
-	assert.Nil(t, c, "Connection is not nil")
+	require.Error(t, err, "Did not receive expected error")
+	require.Equal(t, "Config must contain either APIKeyProvider or AuthTokenProvider", err.Error())
+	require.Nil(t, c, "Connection is not nil")
 }
 
 func Test_AuthProviders(t *testing.T) {
@@ -284,24 +283,24 @@ func Test_ConsumeError(t *testing.T) {
 	_, err = c.subscribe("test-stream", "",
 		func(e error, _ string, _ map[string]string, _ []byte) {
 			t.Logf("Got error: %v", e)
-			assert.Error(t, e)
+			require.Error(t, e)
 			if e == nil {
 				count++
 			}
 		})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	_, err = c.Publish(ctx, "test-stream", nil, []byte("test payload"))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	time.Sleep(2 * time.Second)
 
 	c.disconnect()
 
-	assert.True(t, c.isDisconnected())
-	assert.Zero(t, len(c.subs.table))
-	assert.Zero(t, count)
+	require.True(t, c.isDisconnected())
+	require.Zero(t, len(c.subs.table))
+	require.Zero(t, count)
 }
 
 func Test_PublishError1(t *testing.T) {
@@ -317,7 +316,7 @@ func Test_PublishError1(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	_, err = c.Publish(ctx, "test-stream", nil, []byte("test payload"))
-	assert.Error(t, err, "Did not receive expected error")
+	require.Error(t, err, "Did not receive expected error")
 }
 
 func Test_PublishError2(t *testing.T) {
@@ -355,8 +354,8 @@ func Test_PublishError2(t *testing.T) {
 
 	c.disconnect()
 
-	assert.True(t, c.isDisconnected())
-	assert.Zero(t, len(c.subs.table))
+	require.True(t, c.isDisconnected())
+	require.Zero(t, len(c.subs.table))
 }
 
 func Test_PublishAsync(t *testing.T) {
@@ -388,11 +387,11 @@ func Test_PublishAsync(t *testing.T) {
 	subCh := make(chan []byte)
 	_, err = c.subscribe("test-stream", "",
 		func(e error, id string, _ map[string]string, payload []byte) {
-			assert.NoError(t, e)
+			require.NoError(t, e)
 			t.Logf("Received message %s: %s", id, payload)
 			subCh <- payload
 		})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ack := make(chan *PublishResult)
 	id, cancel, err := c.PublishAsync("test-stream", nil, []byte("test payload"), ack)
@@ -403,7 +402,7 @@ func Test_PublishAsync(t *testing.T) {
 		require.Equal(t, id, r.ID)
 		require.NoError(t, r.Error)
 	case <-time.After(time.Second):
-		assert.FailNow(t, "Publish timed out")
+		require.FailNow(t, "Publish timed out")
 	}
 	cancel()
 
@@ -411,13 +410,13 @@ func Test_PublishAsync(t *testing.T) {
 	case payload := <-subCh:
 		require.Equal(t, payload, []byte("test payload"))
 	case <-time.After(time.Second):
-		assert.FailNow(t, "Consume timed out")
+		require.FailNow(t, "Consume timed out")
 	}
 
 	c.disconnect()
 
-	assert.True(t, c.isDisconnected())
-	assert.Zero(t, len(c.subs.table))
+	require.True(t, c.isDisconnected())
+	require.Zero(t, len(c.subs.table))
 }
 
 func Test_PublishAsyncCanceled(t *testing.T) {
@@ -449,11 +448,11 @@ func Test_PublishAsyncCanceled(t *testing.T) {
 	count := 0
 	_, err = c.subscribe("test-stream", "",
 		func(e error, id string, _ map[string]string, payload []byte) {
-			assert.NoError(t, e)
+			require.NoError(t, e)
 			t.Logf("Received message %s: %s", id, payload)
 			count++
 		})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	ack := make(chan *PublishResult)
 	_, cancel, err := c.PublishAsync("test-stream", nil, []byte("test payload"), ack)
@@ -462,15 +461,15 @@ func Test_PublishAsyncCanceled(t *testing.T) {
 
 	select {
 	case <-ack:
-		assert.Fail(t, "did not expect ack")
+		require.Fail(t, "did not expect ack")
 	case <-time.After(time.Second):
 	}
 
 	c.disconnect()
 
-	assert.True(t, c.isDisconnected())
-	assert.Zero(t, len(c.subs.table))
-	assert.Equal(t, 1, count)
+	require.True(t, c.isDisconnected())
+	require.Zero(t, len(c.subs.table))
+	require.Equal(t, 1, count)
 }
 
 func Test_ConsumeTimeout(t *testing.T) {
@@ -507,7 +506,7 @@ func Test_ConsumeTimeout(t *testing.T) {
 		func(_ error, _ string, _ map[string]string, _ []byte) {
 			require.Fail(t, "Unexpected message")
 		})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	select {
 	case <-c.Error:
