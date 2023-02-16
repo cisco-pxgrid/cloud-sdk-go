@@ -8,6 +8,7 @@ app:
 
 appInstance:
   otp: replace_with_otp_from_dna_cloud
+  name: Instance 001
   # config file will be rewritten with id, key after using OTP
   id:
   apiKey:

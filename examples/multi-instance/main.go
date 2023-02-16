@@ -31,6 +31,7 @@ type appConfig struct {
 
 type appInstanceConfig struct {
 	Otp    string       `yaml:"otp"`
+	Name   string       `yaml:"name"`
 	Id     string       `yaml:"id"`
 	ApiKey string       `yaml:"apiKey"`
 	Tenant tenantConfig `yaml:"tenant"`
@@ -47,6 +48,8 @@ type config struct {
 	AppInstance appInstanceConfig `yaml:"appInstance"`
 }
 
+var selectedDevice *sdk.Device
+
 func messageHandler(id string, d *sdk.Device, stream string, p []byte) {
 	logger.Infof("Received message id=%s tenant=%s device=%s stream=%s payload=%s",
 		id, d.Tenant().Name(), d.Name(), stream, string(p))
@@ -54,10 +57,29 @@ func messageHandler(id string, d *sdk.Device, stream string, p []byte) {
 
 func activationHandler(d *sdk.Device) {
 	logger.Infof("Device activation: %v", d)
+	devices, err := d.Tenant().GetDevices()
+	if err == nil {
+		selectedDevice = &devices[0]
+		logger.Infof("Selected first device. name=%s tenant=%s id=%s ", selectedDevice.Name(), selectedDevice.Tenant().Name(), selectedDevice.ID())
+	} else {
+		logger.Errorf("Failed to GetDevices: %v", err)
+	}
 }
 
 func deactivationHandler(d *sdk.Device) {
 	logger.Infof("Device deactivation: %v", d)
+	devices, err := d.Tenant().GetDevices()
+	if err == nil {
+		if len(devices) > 0 {
+			selectedDevice = &devices[0]
+			logger.Infof("Selected first device. name=%s tenant=%s id=%s ", selectedDevice.Name(), selectedDevice.Tenant().Name(), selectedDevice.ID())
+		} else {
+			selectedDevice = nil
+			logger.Infof("No device found")
+		}
+	} else {
+		logger.Errorf("Failed to GetDevices: %v", err)
+	}
 }
 
 func loadConfig(file string) (*config, error) {
@@ -137,7 +159,7 @@ func main() {
 	var appInstance *sdk.App
 	if ac.Otp != "" {
 		// SDK link tenant with OTP
-		appInstance, tenant, err = app.LinkTenantWithNewAppInstance(ac.Otp, "Instance 001")
+		appInstance, tenant, err = app.LinkTenantWithNewAppInstance(ac.Otp, ac.Name)
 		if err != nil {
 			logger.Errorf("Failed to link tenant: %v", err)
 			os.Exit(-1)
@@ -171,16 +193,15 @@ func main() {
 		logger.Errorf("Failed to get devices: %v", err)
 		os.Exit(-1)
 	}
-	if len(devices) == 0 {
-		logger.Errorf("No device found. tenant=%s", tenant.Name())
-		os.Exit(-1)
+	if len(devices) > 0 {
+		device := devices[0]
+		logger.Infof("Selected first device name=%s tenant=%s id=%s ", device.Name(), device.Tenant().Name(), device.ID())
+	} else {
+		logger.Infof("No device found")
 	}
-	// Select first device
-	device := devices[0]
-	logger.Infof("Selected first device name=%s tenant=%s id=%s ", device.Name(), device.Tenant().Name(), device.ID())
 
 	// Wait for commands
-	go commandLoop(&device)
+	go commandLoop(appInstance, tenant)
 
 	// Catch termination signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -199,14 +220,14 @@ func main() {
 	}
 }
 
-func commandLoop(device *sdk.Device) {
+func commandLoop(app *sdk.App, tenant *sdk.Tenant) {
 	var command string
 	for {
 		fmt.Printf("Enter q to getSessions: ")
-		fmt.Scanln(&command)
-		if command == "q" {
+		n, _ := fmt.Scanln(&command)
+		if n == 1 && command == "q" {
 			req, _ := http.NewRequest(http.MethodPost, "/pxgrid/session/getSessions", bytes.NewBuffer([]byte("{}")))
-			resp, err := device.Query(req)
+			resp, err := selectedDevice.Query(req)
 			if err == nil {
 				b, err := io.ReadAll(resp.Body)
 				if err == nil {
@@ -215,7 +236,7 @@ func commandLoop(device *sdk.Device) {
 					logger.Errorf("Failed to read response body: %v", err)
 				}
 			} else {
-				logger.Errorf("Failed to invoke %s on %s: %v", req, device, err)
+				logger.Errorf("Failed to invoke %s on %s: %v", req, selectedDevice, err)
 			}
 		}
 	}
