@@ -60,8 +60,8 @@ import (
 	rpc "github.com/cisco-pxgrid/cloud-sdk-go/internal/rpc"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
+	"github.com/cisco-pxgrid/websocket"
 	"github.com/go-resty/resty/v2"
-	"nhooyr.io/websocket"
 )
 
 var (

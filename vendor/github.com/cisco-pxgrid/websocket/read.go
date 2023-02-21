@@ -1,3 +1,4 @@
+//go:build !js
 // +build !js
 
 package websocket
@@ -12,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"nhooyr.io/websocket/internal/errd"
-	"nhooyr.io/websocket/internal/xsync"
+	"github.com/cisco-pxgrid/websocket/internal/errd"
+	"github.com/cisco-pxgrid/websocket/internal/xsync"
 )
 
-// Reader reads from the connection until until there is a WebSocket
+// Reader reads from the connection until there is a WebSocket
 // data message to be read. It will handle ping, pong and close frames as appropriate.
 //
 // It returns the type of the message and an io.Reader to read it.
