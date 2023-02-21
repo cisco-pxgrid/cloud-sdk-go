@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	redeemPath     = "/idm/api/v1/appregistry/otp/redeem"
-	unlinkPath     = "/idm/api/v1/appregistry/applications/%s/tenants/%s"
-	getDevicesPath = "/api/uno/v1/registry/devices"
-	directModePath = "/api/dxhub/v2/apiproxy/request/%s/direct%s"
+	newAppInstancePath = "/idm/api/v1/appregistry/otp/new"
+	redeemPath         = "/idm/api/v1/appregistry/otp/redeem"
+	unlinkPath         = "/idm/api/v1/appregistry/applications/%s/tenants/%s"
+	getDevicesPath     = "/api/uno/v1/registry/devices"
+	directModePath     = "/api/dxhub/v2/apiproxy/request/%s/direct%s"
 )
 
 var tlsConfig = tls.Config{
@@ -82,7 +83,11 @@ type Config struct {
 	Transport *http.Transport
 
 	// GetCredentials is used to retrieve the client credentials provided to the app during onboarding
+	// Either use this or ApiKey
 	GetCredentials func() (*Credentials, error)
+
+	// ApiKey is used when GetCredentials is not specified
+	ApiKey string
 
 	// DeviceActivationHandler notifies when a device is activated
 	DeviceActivationHandler func(device *Device)
@@ -105,10 +110,11 @@ type App struct {
 	deviceMap sync.Map
 
 	// Error channel should be used to monitor any errors
-	Error     chan error
-	wg        sync.WaitGroup
-	ctx       context.Context
-	ctxCancel context.CancelFunc
+	Error                  chan error
+	wg                     sync.WaitGroup
+	ctx                    context.Context
+	ctxCancel              context.CancelFunc
+	startPubsubConnectOnce sync.Once
 }
 
 func (app *App) String() string {
@@ -131,13 +137,18 @@ func New(config Config) (*App, error) {
 	httpClient := resty.New().
 		SetBaseURL(hostURL.String()).
 		OnBeforeRequest(func(_ *resty.Client, request *resty.Request) error {
-			credentials, err := config.GetCredentials()
-			if err != nil {
-				return err
+			var key string
+			if config.GetCredentials != nil {
+				credentials, err := config.GetCredentials()
+				if err != nil {
+					return err
+				}
+				key = string(credentials.ApiKey)
+				zeroByteArray(credentials.ApiKey)
+			} else {
+				key = config.ApiKey
 			}
-
-			request.SetHeader("X-Api-Key", string(credentials.ApiKey))
-			zeroByteArray(credentials.ApiKey)
+			request.SetHeader("X-Api-Key", key)
 			return nil
 		})
 
@@ -157,48 +168,6 @@ func New(config Config) (*App, error) {
 	}
 
 	app.ctx, app.ctxCancel = context.WithCancel(context.Background())
-
-	app.wg.Add(1)
-	go func() {
-		defer app.wg.Done()
-		backoffFactor := 0
-		maxbackoffFactor := 3
-		reconnectBackoff := 30 * time.Second
-		reconnectDelay := 30 * time.Second
-
-		//loop to call app.connect with a reconnect delay with gradual backoff
-		for {
-			err := app.connect("")
-			if err != nil {
-				log.Logger.Errorf("Failed to connect the app: %v", err)
-				app.close()
-				app.reportError(err)
-			} else {
-				//obtain the device list
-				app.loadTenantsDevices()
-				//reset backoff factor for successful connection
-				backoffFactor = 0
-
-				select {
-				case err = <-app.conn.Error:
-					app.close()
-					app.reportError(err)
-				case <-app.ctx.Done():
-					return
-				}
-			}
-
-			select {
-			case <-time.After(reconnectDelay + reconnectBackoff*time.Duration(backoffFactor)):
-				//increment backoff factor by 1 for gradual backoff
-				if backoffFactor < maxbackoffFactor {
-					backoffFactor += 1
-				}
-			case <-app.ctx.Done():
-				return
-			}
-		}
-	}()
 	return app, nil
 }
 
@@ -279,19 +248,22 @@ func (app *App) close() error {
 	return nil
 }
 
-// connect opens a websocket connection to pxGrid Cloud
-// WORKAROUND provide an option to use previous subscription ID
-func (app *App) connect(subscriptionID string) error {
+// pubsubConnect opens a websocket connection to pxGrid Cloud
+func (app *App) pubsubConnect() error {
 	var err error
 	app.conn, err = pubsub.NewConnection(pubsub.Config{
 		GroupID: app.config.GroupID,
 		Domain:  url.PathEscape(app.config.RegionalFQDN),
 		APIKeyProvider: func() ([]byte, error) {
-			credentials, e := app.config.GetCredentials()
-			if e != nil {
-				return nil, e
+			if app.config.GetCredentials != nil {
+				credentials, e := app.config.GetCredentials()
+				if e != nil {
+					return nil, e
+				}
+				return credentials.ApiKey, e
+			} else {
+				return []byte(app.config.ApiKey), nil
 			}
-			return credentials.ApiKey, e
 		},
 		Transport: app.config.Transport,
 	})
@@ -566,6 +538,8 @@ func (app *App) setTenant(tenant *Tenant) error {
 	}
 	app.deviceMap.Store(tenant.id, &deviceMapInternal)
 
+	// Once a tenant is added, we can start pubsub
+	app.startPubsubConnect()
 	return nil
 }
 
@@ -590,5 +564,51 @@ func (app *App) loadTenantsDevices() {
 		}
 		app.deviceMap.Store(tenant.(*Tenant).id, &deviceMapInternal)
 		return true
+	})
+}
+
+func (app *App) startPubsubConnect() {
+	app.startPubsubConnectOnce.Do(func() {
+		app.wg.Add(1)
+		go func() {
+			defer app.wg.Done()
+			backoffFactor := 0
+			maxbackoffFactor := 3
+			reconnectBackoff := 30 * time.Second
+			reconnectDelay := 30 * time.Second
+
+			//loop to call app.connect with a reconnect delay with gradual backoff
+			for {
+				err := app.pubsubConnect()
+				if err != nil {
+					log.Logger.Errorf("Failed to connect the app: %v", err)
+					app.close()
+					app.reportError(err)
+				} else {
+					//obtain the device list
+					app.loadTenantsDevices()
+					//reset backoff factor for successful connection
+					backoffFactor = 0
+
+					select {
+					case err = <-app.conn.Error:
+						app.close()
+						app.reportError(err)
+					case <-app.ctx.Done():
+						return
+					}
+				}
+
+				select {
+				case <-time.After(reconnectDelay + reconnectBackoff*time.Duration(backoffFactor)):
+					//increment backoff factor by 1 for gradual backoff
+					if backoffFactor < maxbackoffFactor {
+						backoffFactor += 1
+					}
+				case <-app.ctx.Done():
+					return
+				}
+			}
+		}()
 	})
 }

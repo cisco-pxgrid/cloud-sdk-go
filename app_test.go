@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"sync"
 	"testing"
@@ -57,14 +58,15 @@ var (
 type AppTestSuite struct {
 	suite.Suite
 	config Config
+	s      *httptest.Server
 }
 
 func (suite *AppTestSuite) SetupTest() {
-	s := test.NewRPCServer(suite.T(), test.Config{
+	suite.s = test.NewRPCServer(suite.T(), test.Config{
 		PubSubPath:        apiPaths.pubsub,
 		SubscriptionsPath: apiPaths.subscriptions,
 	})
-	u, _ := url.Parse(s.URL)
+	u, _ := url.Parse(suite.s.URL)
 
 	suite.config = Config{
 		ID:            "appId",
@@ -87,6 +89,10 @@ func (suite *AppTestSuite) SetupTest() {
 			},
 		},
 	}
+}
+
+func (suite *AppTestSuite) TearDownTest() {
+	suite.s.Close()
 }
 
 func (suite *AppTestSuite) TestNew() {
