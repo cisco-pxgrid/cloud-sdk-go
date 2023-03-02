@@ -1,18 +1,15 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
+	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 	"gopkg.in/yaml.v2"
@@ -44,8 +41,7 @@ type config struct {
 }
 
 func messageHandler(id string, d *sdk.Device, stream string, p []byte) {
-	logger.Infof("Received message id=%s tenant=%s device=%s stream=%s payload=%s",
-		id, d.Tenant().Name(), d.Name(), stream, string(p))
+	fmt.Printf("%s|%s|%s|%s|%s\n", time.Now().Format(time.RFC3339), id, d.Name(), stream, p)
 }
 
 func activationHandler(d *sdk.Device) {
@@ -163,30 +159,6 @@ func main() {
 	// Select first device
 	device := devices[0]
 	logger.Infof("Selected first device name=%s tenant=%s id=%s ", device.Name(), device.Tenant().Name(), device.ID())
-
-	// Query
-	go func() {
-		reader := bufio.NewReader(os.Stdin)
-		for {
-			fmt.Printf("Enter q to getSessions: ")
-			text, _ := reader.ReadString('\n')
-			text = strings.Replace(text, "\n", "", -1)
-			if text == "q" {
-				req, _ := http.NewRequest(http.MethodPost, "/pxgrid/session/getSessions", bytes.NewBuffer([]byte("{}")))
-				resp, err := device.Query(req)
-				if err != nil {
-					logger.Errorf("Failed to invoke %s on %s: %v", req, device, err)
-				} else {
-					bodyBytes, err := io.ReadAll(resp.Body)
-					if err != nil {
-						logger.Errorf("Failed to read response body: %v", err)
-					}
-					bodyString := string(bodyBytes)
-					logger.Infof("Status=%s Body=%s", resp.Status, bodyString)
-				}
-			}
-		}
-	}()
 
 	// Catch termination signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
