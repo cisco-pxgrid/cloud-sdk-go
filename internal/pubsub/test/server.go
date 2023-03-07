@@ -12,10 +12,10 @@ import (
 
 	rpc2 "github.com/cisco-pxgrid/cloud-sdk-go/internal/rpc"
 
+	"github.com/cisco-pxgrid/websocket"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"nhooyr.io/websocket"
 )
 
 type Config struct {

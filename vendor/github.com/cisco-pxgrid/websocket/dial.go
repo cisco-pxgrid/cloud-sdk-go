@@ -1,3 +1,4 @@
+//go:build !js
 // +build !js
 
 package websocket
@@ -17,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"nhooyr.io/websocket/internal/errd"
+	"github.com/cisco-pxgrid/websocket/internal/errd"
 )
 
 // DialOptions represents Dial's options.
