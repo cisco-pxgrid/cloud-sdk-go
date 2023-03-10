@@ -4,12 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 	"gopkg.in/yaml.v2"
@@ -41,7 +39,7 @@ type config struct {
 }
 
 func messageHandler(id string, d *sdk.Device, stream string, p []byte) {
-	fmt.Printf("%s|%s|%s|%s|%s\n", time.Now().Format(time.RFC3339), id, d.Name(), stream, p)
+	logger.Infof("Message received. tenant=%s device=%s stream=%s message=%s\n", d.Tenant().Name(), d.Name(), stream, string(p))
 }
 
 func activationHandler(d *sdk.Device) {

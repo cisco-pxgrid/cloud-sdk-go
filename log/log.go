@@ -9,6 +9,7 @@ import (
 	"log"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 // SDKLogger defines the logging interface that can be implemented by the application
@@ -40,9 +41,41 @@ const (
 	LogLevelError
 )
 
-func getLogPrefix() string {
+func init() {
+	log.SetFlags(0)
+}
+
+// Infof logs info level messages
+func (d *DefaultLogger) Infof(format string, args ...interface{}) {
+	if LogLevelInfo >= d.Level {
+		d.printf("INFO", format, args...)
+	}
+}
+
+// Debugf logs debug level messages
+func (d *DefaultLogger) Debugf(format string, args ...interface{}) {
+	if LogLevelDebug >= d.Level {
+		d.printf("DEBUG", format, args...)
+	}
+}
+
+// Errorf logs error level messages
+func (d *DefaultLogger) Errorf(format string, args ...interface{}) {
+	if LogLevelError >= d.Level {
+		d.printf("ERROR", format, args...)
+	}
+}
+
+// Warnf logs warning level messages
+func (d *DefaultLogger) Warnf(format string, args ...interface{}) {
+	if LogLevelWarning >= d.Level {
+		d.printf("WARN", format, args...)
+	}
+}
+
+func getFileline() string {
 	var fileline string
-	_, file, line, ok := runtime.Caller(2)
+	_, file, line, ok := runtime.Caller(3)
 	if ok {
 		dirname := filepath.Base(filepath.Dir(file))
 		filename := filepath.Base(file)
@@ -51,30 +84,9 @@ func getLogPrefix() string {
 	return fmt.Sprintf("%s:%d", fileline, line)
 }
 
-// Infof logs info level messages
-func (d *DefaultLogger) Infof(format string, args ...interface{}) {
-	if LogLevelInfo >= d.Level {
-		log.Printf("|  INFO | "+getLogPrefix()+" | "+format, args...)
-	}
-}
-
-// Debugf logs debug level messages
-func (d *DefaultLogger) Debugf(format string, args ...interface{}) {
-	if LogLevelDebug >= d.Level {
-		log.Printf("| DEBUG | "+getLogPrefix()+" | "+format, args...)
-	}
-}
-
-// Errorf logs error level messages
-func (d *DefaultLogger) Errorf(format string, args ...interface{}) {
-	if LogLevelError >= d.Level {
-		log.Printf("| ERROR | "+getLogPrefix()+" | "+format, args...)
-	}
-}
-
-// Warnf logs warning level messages
-func (d *DefaultLogger) Warnf(format string, args ...interface{}) {
-	if LogLevelWarning >= d.Level {
-		log.Printf("|  WARN | "+getLogPrefix()+" | "+format, args...)
-	}
+func (d *DefaultLogger) printf(level string, format string, args ...interface{}) {
+	t := time.Now().UTC().Format(time.RFC3339)
+	fileinfo := getFileline()
+	arr := append([]interface{}{t, level, fileinfo}, args...)
+	log.Printf("%s %-6s %s "+format, arr...)
 }

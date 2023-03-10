@@ -1,6 +1,6 @@
-# echo-query
+# basic-consumer
 
-A pxGrid Cloud app to receive messages from Cisco ISE
+A pxGrid Cloud app to query Cisco ISE
 
 ## Build
 
@@ -8,16 +8,16 @@ A pxGrid Cloud app to receive messages from Cisco ISE
 go build
 ```
 
-This will generate a binary named `basic-consumer` in ths current directory.
+This will generate a binary named `echo-query` in ths current directory.
 
 ## Run
 
 ### Show command options
 
 ```bash
-./basic-consumer -help
+./echo-query -help
 
-Usage of ./basic-consumer:
+Usage of ./echo-query:
   -config string
     	Configuration yaml file to use (required)
   -debug
@@ -31,6 +31,6 @@ A configuration file is required. Refer to [`config_sample.yaml`](./config_sampl
 ### Run with configuration
 
 ```bash
-./basic-consumer -config config.yaml
+./echo-query -config config.yaml
 ```
 
