@@ -53,7 +53,6 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		Url:     request.RequestURI,
 		Headers: request.Header,
 	}
-	// TODO check if this is too big
 	payload := make([]byte, RequestBodyMax)
 	payloadLength := 0
 	if request.Body != nil {
@@ -65,7 +64,8 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		}
 	}
 	if payloadLength == RequestBodyMax {
-		// Create req object
+		// Payload more than max
+		// Create request object
 		createEnv := createResponse{}
 		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/object")
 		req := d.tenant.regionalHttpClient.R()
@@ -84,7 +84,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		}
 		reqEnv.ObjectUrl = createEnv.ObjectUrl
 
-		// Upload already read b and remaining body
+		// Upload already read payload and remaining body
 		reader := io.MultiReader(bytes.NewReader(payload), request.Body)
 		hresp, err := http.Post(createEnv.ObjectUrl, "", reader)
 		if err != nil {
@@ -94,6 +94,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 			return nil, fmt.Errorf("request error %s", hresp.Status)
 		}
 	} else {
+		// Request size does not require ObjectStore
 		reqEnv.Body = base64.StdEncoding.EncodeToString(payload[0:payloadLength])
 	}
 
@@ -109,7 +110,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	if resp.StatusCode() == http.StatusNotFound {
-		// fallback only if small payload
+		// Fallback only if small payload
 		if payloadLength < RequestBodyMax {
 			return d.fallbackQuery(request, payload)
 		}
@@ -138,8 +139,11 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		if resp.StatusCode() != http.StatusOK {
 			return nil, fmt.Errorf("request error %s", resp.Status())
 		}
-		if progress < respEnv.Progress {
-			// reset idle timeout
+		if respEnv.Status != "RUNNING" {
+			break
+		}
+		if progress != respEnv.Progress {
+			// Reset idle timeout
 			progress = respEnv.Progress
 			requestIdleTimeoutCh = time.After(RequestIdleTimeout)
 		}
