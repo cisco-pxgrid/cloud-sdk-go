@@ -3,48 +3,50 @@
 
 // Package pubsub implements functionality to interact with DxHub using PubSub semantics.
 //
-// Examples
+// # Examples
 //
 // Following examples explain how to use the pubsub package at the high level.
 //
 // Connection
 //
-//  config := &pubsub.Config{App: "test-app", Domain: "test-domain", APIKeyProvider: func() string { return "APIKey"}}
-//  conn, err := pubsub.NewConnection(config)
-//  err = conn.Connect(context.Background())
-//  go func() {
-//      err = <- conn.Error  // Monitor connection for any errors
-//  }
-//  ...
-//  conn.Disconnect()        // Disconnect from the server
+//	config := &pubsub.Config{App: "test-app", Domain: "test-domain", APIKeyProvider: func() string { return "APIKey"}}
+//	conn, err := pubsub.NewConnection(config)
+//	err = conn.Connect(context.Background())
+//	go func() {
+//	    err = <- conn.Error  // Monitor connection for any errors
+//	}
+//	...
+//	conn.Disconnect()        // Disconnect from the server
 //
 // Subscribe
-//  conn.Subscribe("stream", func(err error, id string, headers map[string]string, payload []byte){
-//      fmt.Printf("Received new message: %s, %v, %s", id, headers, payload)
-//  })
+//
+//	conn.Subscribe("stream", func(err error, id string, headers map[string]string, payload []byte){
+//	    fmt.Printf("Received new message: %s, %v, %s", id, headers, payload)
+//	})
 //
 // Publish
-//  ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-//  headers := map[string]string{
-//      "key1": "value1",
-//      "key2": "value2",
-//  }
-//  payload := []byte("message payload")
-//  resp, err := conn.Publish(ctx, "stream", headers, payload)
-//  fmt.Printf("Message publish result: %v", resp)
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+//	headers := map[string]string{
+//	    "key1": "value1",
+//	    "key2": "value2",
+//	}
+//	payload := []byte("message payload")
+//	resp, err := conn.Publish(ctx, "stream", headers, payload)
+//	fmt.Printf("Message publish result: %v", resp)
 //
 // PublishAsync
 //
-//  headers := map[string]string{
-//      "key1": "value1",
-//      "key2": "value2",
-//  }
-//  payload := []byte("message payload")
-//  respCh := make(chan *PublishResult)
-//  id, cancel, err := conn.PublishAsync("stream", headers, payload, respCh)
-//  defer cancel()
-//  resp := <- respCh
-//  fmt.Printf("Message publish result: %v", resp)
+//	headers := map[string]string{
+//	    "key1": "value1",
+//	    "key2": "value2",
+//	}
+//	payload := []byte("message payload")
+//	respCh := make(chan *PublishResult)
+//	id, cancel, err := conn.PublishAsync("stream", headers, payload, respCh)
+//	defer cancel()
+//	resp := <- respCh
+//	fmt.Printf("Message publish result: %v", resp)
 package pubsub
 
 import (
@@ -69,6 +71,7 @@ var (
 	pingPeriod          = 55 * time.Second
 	pongWait            = 60 * time.Second
 	defaultPollInterval = 1 * time.Second
+	handlersExpiration  = 3 * time.Minute
 	webSocketScheme     = "wss"
 	httpScheme          = "https"
 	apiPaths            = struct {
@@ -135,10 +138,7 @@ type internalConnection struct {
 		table      map[string]*subscription // map of subscriptions indexed by stream name
 		sync.Mutex                          // lock to protect the table
 	}
-	msgHandlers struct { // message handlers
-		table      map[string]func(*rpc.Response) // map of handlers indexed by message id
-		sync.Mutex                                // lock to protect the table
-	}
+	msgHandlers *handlerMap
 
 	// consumeTimeout to signify there was a consume timeout within subscriber
 	consumeTimeout bool
@@ -161,15 +161,15 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 		httpClient.SetTransport(config.Transport)
 	}
 	c := &internalConnection{
-		config:     config,
-		restClient: httpClient,
-		closed:     make(chan struct{}),
-		Error:      make(chan error, 1),        // buffer of 1 to make sure that error is not lost
-		readerCh:   make(chan []byte, 64),      // buffer of 64 helps with latency and provides a buffer to catch up during processing
-		writerCh:   make(chan *msgRequest, 64), // buffer of 64 helps with latency and provides a buffer to catch up during processing
+		config:      config,
+		restClient:  httpClient,
+		closed:      make(chan struct{}),
+		Error:       make(chan error, 1),        // buffer of 1 to make sure that error is not lost
+		readerCh:    make(chan []byte, 64),      // buffer of 64 helps with latency and provides a buffer to catch up during processing
+		writerCh:    make(chan *msgRequest, 64), // buffer of 64 helps with latency and provides a buffer to catch up during processing
+		msgHandlers: NewHandlerMap(handlersExpiration),
 	}
 	c.subs.table = make(map[string]*subscription)
-	c.msgHandlers.table = make(map[string]func(*rpc.Response))
 
 	if config.APIKeyProvider != nil {
 		c.authHeader.key = headerStrApiKey
@@ -267,9 +267,7 @@ loop:
 			defer cancel()
 
 			if msg.handler != nil {
-				c.msgHandlers.Lock()
-				c.msgHandlers.table[msg.req.ID] = msg.handler
-				c.msgHandlers.Unlock()
+				c.msgHandlers.Set(msg.req.ID, msg.handler)
 			}
 			err := c.ws.Write(ctx, websocket.MessageText, msg.req.Bytes())
 			if err != nil {
@@ -287,8 +285,6 @@ loop:
 // processor goroutine processes the incoming messages from the WebSocket connection and sends ping
 // messages when required
 func (c *internalConnection) processor() {
-	cleaner := time.NewTicker(3 * time.Minute)
-	var oldHandlersTable map[string]func(*rpc.Response)
 loop:
 	for {
 		select {
@@ -300,26 +296,12 @@ loop:
 				log.Logger.Errorf("Received unknown message: %s", msg)
 				continue
 			}
-
-			c.msgHandlers.Lock()
-			handler := c.msgHandlers.table[resp.ID]
-			delete(c.msgHandlers.table, resp.ID)
-			c.msgHandlers.Unlock()
-
+			handler := c.msgHandlers.GetAndDelete(resp.ID)
 			if handler != nil {
 				handler(resp)
 			}
 		case <-time.After(pingPeriod):
 			c.ping()
-		case <-cleaner.C:
-			// cleanup old messages for which we didn't receive any response from the server
-			for id, handler := range oldHandlersTable {
-				handler(rpc.NewErrorResponse(id, fmt.Errorf("timed out waiting for response from server")))
-			}
-			c.msgHandlers.Lock()
-			oldHandlersTable = c.msgHandlers.table
-			c.msgHandlers.table = make(map[string]func(*rpc.Response))
-			c.msgHandlers.Unlock()
 		}
 	}
 	log.Logger.Debugf("processor shutdown complete")
