@@ -14,26 +14,26 @@ import (
 // No thread running. Expiry checks only when Get or Set is called
 // This is constantly getting called as the code consumes every second
 type handlerMap struct {
-	expireDuration         time.Duration
-	newExpireTime          time.Time
+	expireDuration  time.Duration
+	newExpireTime   time.Time
 	currentHandlers map[string]func(*rpc.Response)
 	olderHandlers   map[string]func(*rpc.Response)
-	sync.RWMutex
+	sync.Mutex
 }
 
 func NewHandlerMap(expireDuration time.Duration) *handlerMap {
 	return &handlerMap{
 		currentHandlers: make(map[string]func(*rpc.Response)),
 		olderHandlers:   make(map[string]func(*rpc.Response)),
-		expireDuration:         expireDuration,
-		newExpireTime:          time.Now().Add(expireDuration),
+		expireDuration:  expireDuration,
+		newExpireTime:   time.Now().Add(expireDuration),
 	}
 }
 
 func (h *handlerMap) GetAndDelete(id string) func(*rpc.Response) {
 	h.expireCheck()
-	h.RLock()
-	defer h.RUnlock()
+	h.Lock()
+	defer h.Unlock()
 	handler := h.currentHandlers[id]
 	delete(h.currentHandlers, id)
 	if handler == nil {
