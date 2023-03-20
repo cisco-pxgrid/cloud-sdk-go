@@ -5,7 +5,7 @@
 # Overview
 
 `cloud-sdk-go` is the Cisco pxGrid Cloud SDK for the Go programming language. This SDK requires a
-minimum version of `Go 1.15`.
+minimum version of `Go 1.18`.
 
 The SDK lets you easily create applications for Cisco pxGrid Cloud and consume pxGrid, ERS and
 OpenAPI services from Cisco Identity Services Engine (ISE) devices.
@@ -45,7 +45,7 @@ func activationHandler(device *sdk.Device) {
 }
 
 // deactivationHandler is invoked when the app gets deactivated for an existing device for a tenant
-func deActivationHandler(device *sdk.Device) {
+func deactivationHandler(device *sdk.Device) {
     fmt.Printf("Device deactivated: %s\n", device)
 }
 
@@ -71,7 +71,7 @@ func main() {
         RegionalFQDN:              "regional.cloud.cisco.com",
         GlobalFQDN:                "global.cloud.cisco.com",
         DeviceActivationHandler:   activationHandler,
-        DeviceDeactivationHandler: deActivationHandler,
+        DeviceDeactivationHandler: deactivationHandler,
         DeviceMessageHandler:      messageHandler,
         ReadStreamID:              "app--pxgrid-cloud-sample-app-R",
         WriteStreamID:             "app--pxgrid-cloud-sample-app-W",
@@ -105,7 +105,7 @@ if err != nil {
     fmt.Printf("Failed to obtain tenant information using supplied OTP: %v", err)
 }
 
-// securely store tenant.ID() and tenant.ApiToken() as it cannot be retrieved again
+// securely store tenant.ID(), tenant.Name() and tenant.ApiToken() as it cannot be retrieved again
 
 err = app.UnlinkTenant(tenant)
 if err != nil {
@@ -119,7 +119,7 @@ In case the app needs to be restarted for some reason, the linked tenant do not 
 They can simply be loaded back as shown the following example:
 
 ```go
-tenant, err := app.SetTenant("tenant-id", "tenant-api-token")
+tenant, err := app.SetTenant("tenant-id", "tenant-name", "tenant-api-token")
 if err != nil {
     fmt.Printf("Failed to set tenant: %v", err)
 }
