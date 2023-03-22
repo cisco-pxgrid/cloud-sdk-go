@@ -112,7 +112,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	if resp.StatusCode() == http.StatusNotFound {
 		// Fallback only if small payload
 		if payloadLength < RequestBodyMax {
-			return d.fallbackQuery(request, payload)
+			return d.fallbackQuery(request, payload[0:payloadLength])
 		}
 	}
 	if resp.StatusCode() != http.StatusOK {
