@@ -26,7 +26,7 @@ type queryResponse struct {
 	Id        string              `json:"queryId"`
 	Status    string              `json:"status"`
 	Progress  string              `json:"progress,omitempty"`
-	Code      int                 `json:"code"`
+	Code      int                 `json:"code,omitempty"`
 	Headers   map[string][]string `json:"headers,omitempty"`
 	ObjectUrl string              `json:"objectUrl,omitempty"`
 	Body      string              `json:"body,omitempty"`
@@ -50,7 +50,7 @@ const (
 func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	reqEnv := envelop{
 		Method:  request.Method,
-		Url:     request.RequestURI,
+		Url:     request.URL.String(),
 		Headers: request.Header,
 	}
 	payload := make([]byte, RequestBodyMax)
