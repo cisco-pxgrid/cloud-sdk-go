@@ -1,4 +1,4 @@
-# echo-query
+# basic-consumer
 
 A pxGrid Cloud app to receive messages from Cisco ISE
 
