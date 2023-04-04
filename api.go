@@ -68,10 +68,10 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		// Create request object
 		createEnv := createResponse{}
 		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/object")
-		req := d.tenant.regionalHttpClient.R()
-		req.SetHeader("X-API-PROXY-COMMUNICATION-STYLE", "sync")
-		req.SetResult(&createEnv)
-		resp, err := req.Execute(http.MethodPost, queryPath)
+		resp, err := d.tenant.regionalHttpClient.R().
+			SetHeader("X-API-PROXY-COMMUNICATION-STYLE", "sync").
+			SetResult(&createEnv).
+			Post(queryPath)
 		if err != nil {
 			return nil, err
 		}
@@ -80,18 +80,21 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 			return nil, fmt.Errorf("payload too large for this device")
 		}
 		if resp.StatusCode() != http.StatusOK {
-			return nil, fmt.Errorf("request error %s", resp.Status())
+			return nil, fmt.Errorf("failed to create object: %s", resp.Status())
 		}
 		reqEnv.ObjectUrl = createEnv.ObjectUrl
 
 		// Upload already read payload and remaining body
 		reader := io.MultiReader(bytes.NewReader(payload), request.Body)
-		hresp, err := http.Post(createEnv.ObjectUrl, "", reader)
+		hresp, err := d.tenant.regionalHttpClient.R().
+			SetBody(reader).
+			SetDoNotParseResponse(true).
+			Post(createEnv.ObjectUrl)
 		if err != nil {
 			return nil, err
 		}
-		if hresp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("request error %s", hresp.Status)
+		if hresp.StatusCode() != http.StatusOK {
+			return nil, fmt.Errorf("failed to upload request object: %s", hresp.Status())
 		}
 	} else {
 		// Request size does not require ObjectStore
@@ -101,11 +104,11 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	// Trigger query
 	respEnv := queryResponse{}
 	queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query")
-	req := d.tenant.regionalHttpClient.R()
-	req.SetHeader("X-API-PROXY-COMMUNICATION-STYLE", "sync")
-	req.SetBody(reqEnv)
-	req.SetResult(&respEnv)
-	resp, err := req.Execute(http.MethodPost, queryPath)
+	resp, err := d.tenant.regionalHttpClient.R().
+		SetHeader("X-API-PROXY-COMMUNICATION-STYLE", "sync").
+		SetBody(reqEnv).
+		SetResult(&respEnv).
+		Post(queryPath)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +119,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		}
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("request error %s", resp.Status())
+		return nil, fmt.Errorf("failed to query: %s", resp.Status())
 	}
 
 	// Poll query status
@@ -128,11 +131,11 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	requestIdleTimeoutCh := time.After(RequestIdleTimeout)
 	for respEnv.Status == "RUNNING" {
 		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/"+queryId)
-		req := d.tenant.regionalHttpClient.R()
-		req.SetHeader("X-API-PROXY-COMMUNICATION-STYLE", "sync")
-		req.SetBody(respEnv)
-		req.SetResult(&respEnv)
-		resp, err = req.Execute(http.MethodGet, queryPath)
+		resp, err = d.tenant.regionalHttpClient.R().
+			SetHeader("X-API-PROXY-COMMUNICATION-STYLE", "sync").
+			SetBody(respEnv).
+			SetResult(&respEnv).
+			Get(queryPath)
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +157,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 			}
 		}
 		select {
-		case <-req.Context().Done():
+		case <-request.Context().Done():
 			return nil, nil
 		case <-requestIdleTimeoutCh:
 			return nil, fmt.Errorf("request idle timeout")
