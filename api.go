@@ -168,31 +168,33 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	}
 
 	// Check body or object in response
-	var response *http.Response
+	var reader io.ReadCloser
 	if respEnv.ObjectUrl != "" {
 		// Download object
-		response, err = http.Get(respEnv.ObjectUrl)
+		hresp, err := d.tenant.regionalHttpClient.R().
+			SetDoNotParseResponse(true).
+			Get(respEnv.ObjectUrl)
 		if err != nil {
 			return nil, err
 		}
 		if resp.StatusCode() != http.StatusOK {
 			return nil, fmt.Errorf("request error %s", resp.Status())
 		}
-		response.Body = newQueryCloser(d, queryId, response.Body)
+		reader = hresp.RawBody()
 	} else {
+		// Direct body response
 		raw, err := base64.StdEncoding.DecodeString(respEnv.Body)
 		if err != nil {
 			return nil, err
 		}
-		// Direct body response
-		response = &http.Response{
-			StatusCode: respEnv.Code,
-			Status:     http.StatusText(respEnv.Code),
-			Body:       newQueryCloser(d, queryId, io.NopCloser(bytes.NewReader(raw))),
-		}
+		reader = io.NopCloser(bytes.NewReader(raw))
 	}
-	// Replace with actual headers
-	response.Header = respEnv.Headers
+	response := &http.Response{
+		StatusCode: respEnv.Code,
+		Header:     respEnv.Headers,
+		Status:     http.StatusText(respEnv.Code),
+		Body:       newQueryCloser(d, queryId, reader),
+	}
 	return response, nil
 }
 
@@ -206,7 +208,7 @@ func (d *Device) fallbackQuery(request *http.Request, payload []byte) (*http.Res
 			req.SetHeader(name, values[0])
 		}
 	}
-	req.SetHeader("X-API-PROXY-COMMUNICATION-STYLE", "sync")
+	req.SetHeader("X-Api-Proxy-Communication-Style", "sync")
 	req.SetBody(payload)
 	req.SetDoNotParseResponse(true)
 
@@ -235,7 +237,7 @@ func (q *queryCloser) Close() error {
 
 	queryPath := fmt.Sprintf(directModePath, url.PathEscape(q.device.ID()), "/query/"+q.queryId)
 	req := q.device.tenant.regionalHttpClient.R()
-	req.SetHeader("X-API-PROXY-COMMUNICATION-STYLE", "sync")
+	req.SetHeader("X-Api-Proxy-Communication-Style", "sync")
 	_, err := req.Execute(http.MethodDelete, queryPath)
 	return err
 }

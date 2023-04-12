@@ -166,6 +166,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		defer f.Close()
 		reader = f
 	} else {
 		reader = os.Stdin
@@ -177,6 +178,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer resp.Body.Close()
 
 	// Setup output
 	var writer io.Writer
@@ -185,6 +187,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		defer f.Close()
 		writer = f
 	} else {
 		writer = os.Stdout
