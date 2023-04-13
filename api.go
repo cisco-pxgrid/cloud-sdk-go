@@ -33,14 +33,10 @@ type queryResponse struct {
 }
 
 var (
-	RequestBodyMax    = 300000
-	StatusPollTimeMin = 500 * time.Millisecond
-	StatusPollTimeMax = 15 * time.Second
-)
-
-const (
+	RequestBodyMax     = 300000
+	StatusPollTimeMin  = 500 * time.Millisecond
+	StatusPollTimeMax  = 15 * time.Second
 	RequestIdleTimeout = 60 * time.Second
-	RequestTimeout     = 10 * time.Minute
 )
 
 // Query for pxGrid, ERS or other API
@@ -127,7 +123,6 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	progress := respEnv.Progress
 	pollDuration := StatusPollTimeMin
 	time.Sleep(pollDuration)
-	requestTimeoutCh := time.After(RequestTimeout)
 	requestIdleTimeoutCh := time.After(RequestIdleTimeout)
 	for respEnv.Status == "RUNNING" {
 		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/"+queryId)
@@ -158,11 +153,9 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		}
 		select {
 		case <-request.Context().Done():
-			return nil, nil
+			return nil, request.Context().Err()
 		case <-requestIdleTimeoutCh:
 			return nil, fmt.Errorf("request idle timeout")
-		case <-requestTimeoutCh:
-			return nil, fmt.Errorf("request timeout")
 		case <-time.After(pollDuration):
 		}
 	}
