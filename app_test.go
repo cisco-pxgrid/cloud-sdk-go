@@ -79,6 +79,10 @@ func (suite *AppTestSuite) SetupTest() {
 				ApiKey: []byte("api-key-obtained-during-app-onboarding"),
 			}, nil
 		},
+		AppConnectionHandler: func(tenantId string) {
+		},
+		AppDisconnectionHandler: func(tenantId string) {
+		},
 		DeviceActivationHandler: func(device *Device) {
 		},
 		DeviceDeactivationHandler: func(device *Device) {
