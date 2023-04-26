@@ -77,6 +77,8 @@ func (app *App) newAppConfig(appID, appApiKey string) Config {
 		WriteStreamID:             "app--" + appID + "-W",
 		Transport:                 app.config.Transport,
 		ApiKey:                    appApiKey,
+		AppConnectionHandler:      app.config.AppConnectionHandler,
+		AppDisconnectionHandler:   app.config.AppDisconnectionHandler,
 		DeviceActivationHandler:   app.config.DeviceActivationHandler,
 		DeviceDeactivationHandler: app.config.DeviceDeactivationHandler,
 		DeviceMessageHandler:      app.config.DeviceMessageHandler,

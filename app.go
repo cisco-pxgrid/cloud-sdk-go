@@ -94,6 +94,12 @@ type Config struct {
 
 	// DeviceDeactivationHandler notifies when a device is deactivated
 	DeviceDeactivationHandler func(device *Device)
+	
+	// AppConnectionHandler notifies when a application is connected
+	AppConnectionHandler func(tenantId string)
+
+	// AppDisconnectionHandler notifies when a application is disconnected
+	AppDisconnectionHandler func(tenantId string)
 
 	// DeviceMessageHandler is invoked when a new data message is received
 	DeviceMessageHandler func(messageID string, device *Device, stream string, payload []byte)
@@ -294,6 +300,8 @@ const (
 	msgIDKey          = "messageID"
 	msgTypeActivate   = "device:activate"
 	msgTypeDeactivate = "device:deactivate"
+	msgTypeAppConnect    = "app:connect"
+	msgTypeAppDisconnect = "app:disconnect"
 )
 
 // readStreamHandler returns the callback that handles messages received on the app's read stream
@@ -359,7 +367,9 @@ func (app *App) controlMsgHandler(id string, payload []byte) error {
 		if app.config.DeviceActivationHandler != nil {
 			app.config.DeviceActivationHandler(device)
 		}
-	} else if ctrlPayload.Type == msgTypeDeactivate {
+	} 
+
+	if ctrlPayload.Type == msgTypeDeactivate {
 		v, ok = deviceMap.Load(ctrlPayload.Info.Device)
 		if !ok || v == nil {
 			return fmt.Errorf("unknown device: %s", ctrlPayload.Info.Device)
@@ -370,6 +380,19 @@ func (app *App) controlMsgHandler(id string, payload []byte) error {
 			app.config.DeviceDeactivationHandler(device)
 		}
 	}
+
+	if ctrlPayload.Type == msgTypeAppConnect {
+		if app.config.AppConnectionHandler != nil {
+			app.config.AppConnectionHandler(ctrlPayload.Info.Tenant)
+		}
+	}
+
+	if ctrlPayload.Type == msgTypeAppDisconnect {
+		if app.config.AppDisconnectionHandler != nil {
+			app.config.AppDisconnectionHandler(ctrlPayload.Info.Tenant)
+		}
+	}
+
 	return nil
 }
 
