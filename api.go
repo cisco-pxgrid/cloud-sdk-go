@@ -33,10 +33,9 @@ type queryResponse struct {
 }
 
 var (
-	RequestBodyMax     = 300000
-	StatusPollTimeMin  = 500 * time.Millisecond
-	StatusPollTimeMax  = 15 * time.Second
-	RequestIdleTimeout = 60 * time.Second
+	RequestBodyMax    = 300000
+	StatusPollTimeMin = 500 * time.Millisecond
+	StatusPollTimeMax = 15 * time.Second
 )
 
 const (
@@ -124,16 +123,12 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 
 	// Poll query status
 	queryId := respEnv.Id
-	progress := respEnv.Progress
 	pollDuration := StatusPollTimeMin
-	requestIdleTimeoutCh := time.After(RequestIdleTimeout)
 	for respEnv.Status == "RUNNING" {
 		// Sleep
 		select {
 		case <-request.Context().Done():
 			return nil, request.Context().Err()
-		case <-requestIdleTimeoutCh:
-			return nil, fmt.Errorf("request idle timeout")
 		case <-time.After(pollDuration):
 		}
 
@@ -151,12 +146,6 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 			return nil, fmt.Errorf("request error %s", resp.Status())
 		}
 
-		// Check progress
-		if progress != respEnv.Progress {
-			// Reset idle timeout
-			progress = respEnv.Progress
-			requestIdleTimeoutCh = time.After(RequestIdleTimeout)
-		}
 		if pollDuration < StatusPollTimeMax {
 			pollDuration *= 2
 			if pollDuration > StatusPollTimeMax {
