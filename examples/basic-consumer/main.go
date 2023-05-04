@@ -143,20 +143,7 @@ func main() {
 			os.Exit(-1)
 		}
 	}
-
-	// SDK get devices
-	devices, err := tenant.GetDevices()
-	if err != nil {
-		logger.Errorf("Failed to get devices: %v", err)
-		os.Exit(-1)
-	}
-	if len(devices) == 0 {
-		logger.Errorf("No device found. tenant=%s", tenant.Name())
-		os.Exit(-1)
-	}
-	// Select first device
-	device := devices[0]
-	logger.Infof("Selected first device name=%s tenant=%s id=%s ", device.Name(), device.Tenant().Name(), device.ID())
+	logger.Infof("Linked with tenant: %s", tenant.Name())
 
 	// Catch termination signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

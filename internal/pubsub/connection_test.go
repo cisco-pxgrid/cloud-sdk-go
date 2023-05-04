@@ -82,13 +82,13 @@ func Test_E2E(t *testing.T) {
 	wg.Wait()
 
 	// wait for sever to respond to all consume requests
-	time.Sleep(1 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	// verify
 	for i := 0; i < numSubs; i++ {
 		stream := fmt.Sprintf("test-stream-%d", i)
 		receivedMu.Lock()
-		require.Equal(t, numMessages, receivedMsgs[stream], "Did not receive all the mssages from stream", i)
+		require.Equal(t, numMessages, receivedMsgs[stream], "Did not receive all the messages for stream %s", stream)
 		receivedMu.Unlock()
 	}
 

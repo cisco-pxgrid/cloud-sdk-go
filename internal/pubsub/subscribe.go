@@ -198,7 +198,7 @@ func (c *internalConnection) createSubscription(stream string) (string, error) {
 	}
 	subResp := subscriptionResp{}
 	u := url.URL{
-		Scheme: httpScheme,
+		Scheme: HttpScheme,
 		Host:   c.config.Domain,
 		Path:   apiPaths.subscriptions,
 	}
@@ -232,7 +232,7 @@ func (c *internalConnection) createSubscription(stream string) (string, error) {
 func (c *internalConnection) deleteSubscription(id string) error {
 	log.Logger.Debugf("Deleting subscription '%s'", id)
 	u := url.URL{
-		Scheme: httpScheme,
+		Scheme: HttpScheme,
 		Host:   c.config.Domain,
 		Path:   path.Join(apiPaths.subscriptions, id),
 	}

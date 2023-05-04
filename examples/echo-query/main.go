@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -75,6 +75,8 @@ func main() {
 	configFile := flag.String("config", "", "Configuration yaml file to use (required)")
 	debug := flag.Bool("debug", false, "Enable debug output")
 	insecure := flag.Bool("insecure", false, "Insecure TLS")
+	file := flag.String("in", "", "File for input for echo (optional). stdin if not specified")
+	out := flag.String("out", "", "File for output for echo (optional). stdout if not specified")
 	flag.Parse()
 	config, err := loadConfig(*configFile)
 	if err != nil {
@@ -157,20 +159,47 @@ func main() {
 	device := devices[0]
 	logger.Infof("Selected first device name=%s tenant=%s id=%s", device.Name(), device.Tenant().Name(), device.ID())
 
+	// Setup input
+	var reader io.Reader
+	if *file != "" {
+		f, err := os.Open(*file)
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+		reader = f
+	} else {
+		reader = os.Stdin
+	}
+
 	// Perform echo-query
-	req, _ := http.NewRequest(http.MethodPost, "/pxgrid/echo/query", bytes.NewBuffer([]byte(`{"name1":"value1"}`)))
+	req, _ := http.NewRequest(http.MethodPost, "/pxgrid/echo/query", reader)
 	resp, err := device.Query(req)
 	if err != nil {
-		logger.Errorf("Failed to invoke %s on %s: %v", req, device, err)
-	} else {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			logger.Errorf("Failed to read response body: %v", err)
-		} else {
-			bodyString := string(bodyBytes)
-			logger.Infof("Query completed. status=%s body=%s\n", resp.Status, bodyString)
-		}
+		panic(err)
 	}
+	defer resp.Body.Close()
+
+	// Setup output
+	var writer io.Writer
+	if *out != "" {
+		f, err := os.Create(*out)
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+		writer = f
+	} else {
+		writer = os.Stdout
+	}
+
+	// Write body to output
+	n, err := io.Copy(writer, resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println()
+	logger.Infof("Query completed. status=%s bodyLen=%d\n", resp.Status, n)
 
 	if err = app.Close(); err != nil {
 		panic(err)
