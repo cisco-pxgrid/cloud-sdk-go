@@ -118,8 +118,7 @@ type App struct {
 }
 
 var (
-	defaultHTTPScheme      = "https"
-	defaultWebSocketScheme = "wss"
+	defaultHTTPScheme = "https"
 )
 
 func (app *App) String() string {

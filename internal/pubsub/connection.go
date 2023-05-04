@@ -72,7 +72,7 @@ var (
 	pongWait            = 60 * time.Second
 	defaultPollInterval = 1 * time.Second
 	handlersExpiration  = 3 * time.Minute
-	webSocketScheme     = "wss"
+	WebSocketScheme     = "wss"
 	HttpScheme          = "https"
 	apiPaths            = struct {
 		subscriptions string
@@ -209,7 +209,7 @@ func (c *internalConnection) connect(ctx context.Context) error {
 	var resp *http.Response
 	brokerSubURL := &url.URL{
 		Host:   c.config.Domain,
-		Scheme: webSocketScheme,
+		Scheme: WebSocketScheme,
 		Path:   apiPaths.pubsub,
 	}
 	c.ws, resp, err = websocket.Dial(ctx, brokerSubURL.String(), opts)

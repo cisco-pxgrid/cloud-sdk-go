@@ -23,27 +23,37 @@ const (
 	objectStorePath = "/unittest/objectstore"
 )
 
-func setup() (*httptest.Server, *chi.Mux, Device, error) {
+func setupTestserver() (*httptest.Server, *chi.Mux) {
 	// Change to http
 	defaultHTTPScheme = "http"
 	pubsub.HttpScheme = "http"
+	pubsub.WebSocketScheme = "ws"
 
-	// Base routes
 	r := chi.NewRouter()
-	r.Post(redeemPath, func(w http.ResponseWriter, r *http.Request) {})
+	r.Post(redeemPath, func(w http.ResponseWriter, r *http.Request) {
+		resp := redeemOTPResponse{
+			TenantID:   "tenant-001",
+			TenantName: "tenant-001",
+			Token:      "token-001",
+		}
+		render.JSON(w, r, resp)
+	})
 	r.Get(getDevicesPath, func(w http.ResponseWriter, r *http.Request) {
 		d := getDeviceResponse{ID: "dev1"}
 		devices := []getDeviceResponse{d}
 		render.JSON(w, r, devices)
 	})
 	r.Post(objectStorePath, func(w http.ResponseWriter, r *http.Request) {})
-	r.Get(objectStorePath, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("object1")) })
+	r.Get(objectStorePath, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("object1")) })
 
 	// Test server
 	ts := httptest.NewServer(r)
+	return ts, r
+}
 
+func setupDevice(tsUrl string) (*Device, error) {
 	// Construct config
-	url, _ := url.Parse(ts.URL)
+	url, _ := url.Parse(tsUrl)
 	config := Config{
 		ID:            "appId",
 		RegionalFQDN:  url.Host,
@@ -56,17 +66,24 @@ func setup() (*httptest.Server, *chi.Mux, Device, error) {
 			}, nil
 		},
 	}
-	app, _ := New(config)
-	tenant, _ := app.LinkTenant("otp")
-	devices, _ := tenant.GetDevices()
-	return ts, r, devices[0], nil
+	app, err := New(config)
+	if err != nil {
+		return nil, err
+	}
+	tenant, err := app.LinkTenant("otp")
+	if err != nil {
+		return nil, err
+	}
+	devices, err := tenant.GetDevices()
+	if err != nil {
+		return nil, err
+	}
+	return &devices[0], nil
 }
 
 func TestEmptyQuery(t *testing.T) {
-	ts, r, device, err := setup()
-	require.NoError(t, err)
+	ts, r := setupTestserver()
 	defer ts.Close()
-
 	queryPath := fmt.Sprintf(directModePath, "dev1", "/query")
 	r.Post(queryPath, func(w http.ResponseWriter, r *http.Request) {
 		result := queryResponse{
@@ -77,21 +94,22 @@ func TestEmptyQuery(t *testing.T) {
 		}
 		render.JSON(w, r, result)
 	})
-	resp, err := device.Query(&http.Request{})
+
+	device, err := setupDevice(ts.URL)
+	require.NoError(t, err)
+	resp, err := device.Query(&http.Request{URL: &url.URL{}})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 }
 
 func TestSmallQuery(t *testing.T) {
-	ts, r, device, err := setup()
-	require.NoError(t, err)
+	ts, r := setupTestserver()
 	defer ts.Close()
-
 	queryPath := fmt.Sprintf(directModePath, "dev1", "/query")
 	r.Post(queryPath, func(w http.ResponseWriter, r *http.Request) {
 		reqEnv := envelop{}
-		json.NewDecoder(r.Body).Decode(&reqEnv)
+		_ = json.NewDecoder(r.Body).Decode(&reqEnv)
 		result := queryResponse{
 			Id:     "123",
 			Status: "COMPLETE",
@@ -100,7 +118,10 @@ func TestSmallQuery(t *testing.T) {
 		}
 		render.JSON(w, r, result)
 	})
-	resp, err := device.Query(&http.Request{Body: io.NopCloser(strings.NewReader("body1"))})
+
+	device, err := setupDevice(ts.URL)
+	require.NoError(t, err)
+	resp, err := device.Query(&http.Request{URL: &url.URL{}, Body: io.NopCloser(strings.NewReader("body1"))})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	b, err := io.ReadAll(resp.Body)
@@ -110,13 +131,8 @@ func TestSmallQuery(t *testing.T) {
 }
 
 func TestLargeRequest(t *testing.T) {
-	ts, r, device, err := setup()
-	require.NoError(t, err)
+	ts, r := setupTestserver()
 	defer ts.Close()
-
-	// Lower max to test logic easier
-	RequestBodyMax = 10
-
 	createPath := fmt.Sprintf(directModePath, "dev1", "/query/object")
 	r.Post(createPath, func(w http.ResponseWriter, r *http.Request) {
 		render.JSON(w, r, createResponse{ObjectUrl: ts.URL + objectStorePath})
@@ -124,7 +140,7 @@ func TestLargeRequest(t *testing.T) {
 	queryPath := fmt.Sprintf(directModePath, "dev1", "/query")
 	r.Post(queryPath, func(w http.ResponseWriter, r *http.Request) {
 		reqEnv := envelop{}
-		json.NewDecoder(r.Body).Decode(&reqEnv)
+		_ = json.NewDecoder(r.Body).Decode(&reqEnv)
 		if reqEnv.ObjectUrl == "" {
 			http.Error(w, "Missing ObjectUrl", http.StatusBadRequest)
 			return
@@ -137,7 +153,14 @@ func TestLargeRequest(t *testing.T) {
 		}
 		render.JSON(w, r, result)
 	})
-	resp, err := device.Query(&http.Request{Body: io.NopCloser(strings.NewReader("12345678901"))})
+
+	device, err := setupDevice(ts.URL)
+	require.NoError(t, err)
+
+	// Lower max to test logic easier
+	RequestBodyMax = 10
+
+	resp, err := device.Query(&http.Request{URL: &url.URL{}, Body: io.NopCloser(strings.NewReader("12345678901"))})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	b, err := io.ReadAll(resp.Body)
@@ -147,10 +170,8 @@ func TestLargeRequest(t *testing.T) {
 }
 
 func TestLargeResponse(t *testing.T) {
-	ts, r, device, err := setup()
-	require.NoError(t, err)
+	ts, r := setupTestserver()
 	defer ts.Close()
-
 	queryPath := fmt.Sprintf(directModePath, "dev1", "/query")
 	r.Post(queryPath, func(w http.ResponseWriter, r *http.Request) {
 		result := queryResponse{
@@ -161,7 +182,10 @@ func TestLargeResponse(t *testing.T) {
 		}
 		render.JSON(w, r, result)
 	})
-	resp, err := device.Query(&http.Request{Body: io.NopCloser(strings.NewReader("small"))})
+
+	device, err := setupDevice(ts.URL)
+	require.NoError(t, err)
+	resp, err := device.Query(&http.Request{URL: &url.URL{}, Body: io.NopCloser(strings.NewReader("small"))})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	b, err := io.ReadAll(resp.Body)
@@ -171,13 +195,8 @@ func TestLargeResponse(t *testing.T) {
 }
 
 func TestStatus(t *testing.T) {
-	ts, r, device, err := setup()
-	require.NoError(t, err)
+	ts, r := setupTestserver()
 	defer ts.Close()
-
-	// Lower status poll for quicker test
-	StatusPollTimeMin = 100 * time.Millisecond
-
 	queryPath := fmt.Sprintf(directModePath, "dev1", "/query")
 	r.Post(queryPath, func(w http.ResponseWriter, r *http.Request) {
 		render.JSON(w, r, queryResponse{Id: "query1", Status: "RUNNING"})
@@ -199,7 +218,14 @@ func TestStatus(t *testing.T) {
 		count++
 		render.JSON(w, r, result)
 	})
-	resp, err := device.Query(&http.Request{Body: io.NopCloser(strings.NewReader("small"))})
+
+	device, err := setupDevice(ts.URL)
+	require.NoError(t, err)
+
+	// Lower status poll for quicker test
+	StatusPollTimeMin = 100 * time.Millisecond
+
+	resp, err := device.Query(&http.Request{URL: &url.URL{}, Body: io.NopCloser(strings.NewReader("small"))})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	b, err := io.ReadAll(resp.Body)
@@ -209,12 +235,13 @@ func TestStatus(t *testing.T) {
 }
 
 func TestFallbackQuery(t *testing.T) {
-	ts, r, device, err := setup()
-	require.NoError(t, err)
+	ts, r := setupTestserver()
 	defer ts.Close()
-
 	queryPath := fmt.Sprintf(directModePath, "dev1", "/api/get")
 	r.Get(queryPath, func(w http.ResponseWriter, r *http.Request) {})
+
+	device, err := setupDevice(ts.URL)
+	require.NoError(t, err)
 	u, _ := url.Parse("/api/get")
 	resp, err := device.Query(&http.Request{Method: http.MethodGet, URL: u})
 	require.NoError(t, err)
@@ -223,15 +250,17 @@ func TestFallbackQuery(t *testing.T) {
 }
 
 func TestFallbackTooLargeQuery(t *testing.T) {
-	ts, r, device, err := setup()
-	require.NoError(t, err)
+	ts, r := setupTestserver()
 	defer ts.Close()
+	queryPath := fmt.Sprintf(directModePath, "dev1", "/api/get")
+	r.Get(queryPath, func(w http.ResponseWriter, r *http.Request) {})
+
+	device, err := setupDevice(ts.URL)
+	require.NoError(t, err)
 
 	// Lower max to test logic easier
 	RequestBodyMax = 10
 
-	queryPath := fmt.Sprintf(directModePath, "dev1", "/api/get")
-	r.Get(queryPath, func(w http.ResponseWriter, r *http.Request) {})
 	u, _ := url.Parse("/api/get")
 	_, err = device.Query(&http.Request{
 		Method: http.MethodGet,
