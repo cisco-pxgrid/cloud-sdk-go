@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -32,10 +33,24 @@ type queryResponse struct {
 	Body      string              `json:"body,omitempty"`
 }
 
+type multipartStartResponse struct {
+	Id string `json:"multipleparts_id"`
+}
+
+type partElement struct {
+	Id  string `json:"part_number"`
+	Tag string `json:"part_tag"`
+}
+
+type multipartEndRequest struct {
+	Parts []partElement `json:"parts"`
+}
+
 var (
 	RequestBodyMax    = 300000
 	StatusPollTimeMin = 500 * time.Millisecond
 	StatusPollTimeMax = 15 * time.Second
+	FragmentSize      = int64(10 * 1024 * 1024)
 )
 
 const (
@@ -85,15 +100,9 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 
 		// Upload previously read payload and remaining body
 		reader := io.MultiReader(bytes.NewReader(payload), request.Body)
-		hresp, err := d.tenant.regionalHttpClient.R().
-			SetBody(reader).
-			SetDoNotParseResponse(true).
-			Post(createEnv.ObjectUrl)
+		err = d.uploadObject(createEnv.ObjectUrl, reader)
 		if err != nil {
 			return nil, err
-		}
-		if hresp.StatusCode() != http.StatusOK {
-			return nil, fmt.Errorf("failed to upload request object: %s", hresp.Status())
 		}
 	} else {
 		// Request size does not require ObjectStore
@@ -202,6 +211,69 @@ func (d *Device) fallbackQuery(request *http.Request, payload []byte) (*http.Res
 	response, err := req.Execute(request.Method, queryPath)
 
 	return response.RawResponse, err
+}
+
+func (d *Device) uploadObject(path string, reader io.Reader) error {
+	// Upload fragments starts
+	mresp := multipartStartResponse{}
+	hresp, err := d.tenant.regionalHttpClient.R().
+		SetResult(&mresp).
+		SetQueryParam("action", "multipleparts_start").
+		Post(path)
+
+	if err != nil {
+		return err
+	}
+	if hresp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("failed to start upload: %s", hresp.Status())
+	}
+	multipartId := mresp.Id
+
+	// Upload fragment parts
+	parts := []partElement{}
+	partId := 1
+	for {
+		lr := &io.LimitedReader{R: reader, N: FragmentSize}
+		presp := partElement{}
+		hresp, err = d.tenant.regionalHttpClient.R().
+			SetBody(lr).
+			SetResult(&presp).
+			SetQueryParam("action", "multipleparts_upload").
+			SetQueryParam("multipleparts_id", multipartId).
+			SetQueryParam("part_number", strconv.Itoa(partId)).
+			Put(path)
+		if err != nil {
+			return err
+		}
+		if hresp.StatusCode() != http.StatusOK {
+			return fmt.Errorf("failed to upload part: %s", hresp.Status())
+		}
+		parts = append(parts, presp)
+
+		partId++
+
+		if lr.N > 0 {
+			// Finished because not entire fragment was used
+			break
+		}
+	}
+
+	// Upload fragments ends
+	mreq := multipartEndRequest{
+		Parts: parts,
+	}
+	hresp, err = d.tenant.regionalHttpClient.R().
+		SetBody(mreq).
+		SetQueryParam("action", "multipleparts_finish").
+		SetQueryParam("multipleparts_id", multipartId).
+		Post(path)
+	if err != nil {
+		return err
+	}
+	if hresp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("failed to end upload: %s", hresp.Status())
+	}
+	return nil
 }
 
 func newQueryCloser(device *Device, queryId string, reader io.ReadCloser) io.ReadCloser {
