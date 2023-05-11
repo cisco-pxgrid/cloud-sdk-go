@@ -160,7 +160,7 @@ Instead map the service name to the keyword and append it to the URL along with 
     -----------------------------------------------------------
 
 ```go
-req, _ := http.NewRequest(http.MethodPost, "/pxgrid/trustsec/getSecurityGroups", nil)
+req, _ := http.NewRequest(http.MethodPost, "/pxgrid/trustsec/getSecurityGroups", strings.NewReader("{}"))
 resp, err := device.Query(req)
 if err != nil {
     fmt.Printf("Failed to invoke %s on %s: %v", req, device, err)
