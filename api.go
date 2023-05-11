@@ -59,7 +59,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		reader := request.Body
 		var err error
 		payloadLength, err = reader.Read(payload)
-		if err != nil {
+		if err != nil && err != io.EOF {
 			return nil, err
 		}
 	}
