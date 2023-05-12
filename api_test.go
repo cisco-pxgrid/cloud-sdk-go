@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub"
+	"github.com/cisco-pxgrid/websocket"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 
@@ -21,13 +22,17 @@ import (
 
 const (
 	objectStorePath = "/unittest/objectstore"
+	pubsubPath      = "/api/v2/pubsub"
 )
 
-func setupTestserver() (*httptest.Server, *chi.Mux) {
+func init() {
 	// Change to http
 	defaultHTTPScheme = "http"
 	pubsub.HttpScheme = "http"
 	pubsub.WebSocketScheme = "ws"
+}
+
+func setupTestserver() (*httptest.Server, *chi.Mux) {
 
 	r := chi.NewRouter()
 	r.Post(redeemPath, func(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +50,14 @@ func setupTestserver() (*httptest.Server, *chi.Mux) {
 	})
 	r.Post(objectStorePath, func(w http.ResponseWriter, r *http.Request) {})
 	r.Get(objectStorePath, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("object1")) })
+	r.Get(pubsubPath, func(w http.ResponseWriter, r *http.Request) {
+		conn, _ := websocket.Accept(w, r, nil)
+		for {
+			if _, _, err := conn.Read(r.Context()); err != nil {
+				return
+			}
+		}
+	})
 
 	// Test server
 	ts := httptest.NewServer(r)
