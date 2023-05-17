@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/go-resty/resty/v2"
 )
 
 type envelop struct {
@@ -33,7 +35,8 @@ type queryResponse struct {
 }
 
 var (
-	RequestBodyMax    = 300000
+	RequestBodyMax    = 300 * 1024
+	RequestObjectMax  = 100 * 1024 * 1024
 	StatusPollTimeMin = 500 * time.Millisecond
 	StatusPollTimeMax = 15 * time.Second
 )
@@ -85,10 +88,21 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 
 		// Upload previously read payload and remaining body
 		reader := io.MultiReader(bytes.NewReader(payload), request.Body)
-		hresp, err := d.tenant.regionalHttpClient.R().
+
+		// Read one more byte to check if max is crossed
+		b, err := io.ReadAll(io.LimitReader(reader, int64(RequestObjectMax)+1))
+		if err != nil {
+			return nil, err
+		}
+		if len(b) > RequestObjectMax {
+			return nil, fmt.Errorf("payload too large for this device")
+		}
+		reader = bytes.NewReader(b)
+
+		hresp, err := resty.New().R().
 			SetBody(reader).
 			SetDoNotParseResponse(true).
-			Post(createEnv.ObjectUrl)
+			Put(createEnv.ObjectUrl)
 		if err != nil {
 			return nil, err
 		}

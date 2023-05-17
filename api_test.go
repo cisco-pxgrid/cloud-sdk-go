@@ -48,7 +48,7 @@ func setupTestserver() (*httptest.Server, *chi.Mux) {
 		devices := []getDeviceResponse{d}
 		render.JSON(w, r, devices)
 	})
-	r.Post(objectStorePath, func(w http.ResponseWriter, r *http.Request) {})
+	r.Put(objectStorePath, func(w http.ResponseWriter, r *http.Request) {})
 	r.Get(objectStorePath, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("object1")) })
 	r.Get(pubsubPath, func(w http.ResponseWriter, r *http.Request) {
 		conn, _ := websocket.Accept(w, r, nil)
