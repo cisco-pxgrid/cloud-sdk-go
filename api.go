@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -21,7 +22,7 @@ type envelop struct {
 }
 
 type createResponse struct {
-	ObjectUrl string `json:"objectUrl"`
+	ObjectUrl []string `json:"objectUrl"`
 }
 
 type queryResponse struct {
@@ -35,8 +36,11 @@ type queryResponse struct {
 }
 
 var (
-	RequestBodyMax    = 300 * 1024
-	RequestObjectMax  = 100 * 1024 * 1024
+	RequestBodyMax = 300 * 1024
+	//2GB
+	RequestObjectMax = 2 * 1024 * 1024 * 1024
+	//50MB
+	PartSize          = 50 * 1024 * 1024
 	StatusPollTimeMin = 500 * time.Millisecond
 	StatusPollTimeMax = 15 * time.Second
 )
@@ -84,30 +88,49 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		if resp.StatusCode() != http.StatusOK {
 			return nil, fmt.Errorf("failed to create object: %s", resp.Status())
 		}
-		reqEnv.ObjectUrl = createEnv.ObjectUrl
+		reqEnv.ObjectUrl = createEnv.ObjectUrl[0]
 
 		// Upload previously read payload and remaining body
 		reader := io.MultiReader(bytes.NewReader(payload), request.Body)
 
 		// Read one more byte to check if max is crossed
-		b, err := io.ReadAll(io.LimitReader(reader, int64(RequestObjectMax)+1))
-		if err != nil {
-			return nil, err
-		}
-		if len(b) > RequestObjectMax {
-			return nil, fmt.Errorf("payload too large for this device")
-		}
-		reader = bytes.NewReader(b)
+		payloadTotalLength := 0
+		var wg sync.WaitGroup
+		var uploadErr error
+		for i := 0; ; i++ {
+			b, err := io.ReadAll(io.LimitReader(reader, int64(PartSize)))
+			if err != nil {
+				return nil, err
+			}
+			if len(b) == 0 {
+				break
+			}
+			payloadTotalLength += len(b)
+			if payloadTotalLength > RequestObjectMax {
+				return nil, fmt.Errorf("payload too large for this device")
+			}
 
-		hresp, err := resty.New().R().
-			SetBody(reader).
-			SetDoNotParseResponse(true).
-			Put(createEnv.ObjectUrl)
-		if err != nil {
-			return nil, err
+			wg.Add(1)
+			go func(urlNumber int) {
+				defer wg.Done()
+				hresp, err := resty.New().R().
+					SetBody(bytes.NewReader(b)).
+					SetDoNotParseResponse(true).
+					Put(createEnv.ObjectUrl[urlNumber])
+				if err != nil && uploadErr != nil {
+					uploadErr = err
+				}
+				if hresp.StatusCode() != http.StatusOK {
+					if uploadErr != nil {
+						uploadErr = fmt.Errorf("%v", hresp.StatusCode())
+					}
+				}
+			}(i)
+
 		}
-		if hresp.StatusCode() != http.StatusOK {
-			return nil, fmt.Errorf("failed to upload request object: %s", hresp.Status())
+		wg.Wait()
+		if uploadErr != nil {
+			return nil, uploadErr
 		}
 	} else {
 		// Request size does not require ObjectStore
@@ -178,6 +201,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if resp.StatusCode() != http.StatusOK {
 			return nil, fmt.Errorf("request error %s", resp.Status())
 		}
