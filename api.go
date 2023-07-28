@@ -19,10 +19,12 @@ type envelop struct {
 	Headers   map[string][]string `json:"headers"`
 	ObjectUrl string              `json:"objectUrl,omitempty"`
 	Body      string              `json:"body,omitempty"`
+	QueryID   string              `json:"queryId,omitempty"`
 }
 
 type createResponse struct {
-	ObjectUrl []string `json:"objectUrl"`
+	ObjectUrls []string `json:"objectUrls"`
+	QueryID    string   `json:"queryId"`
 }
 
 type queryResponse struct {
@@ -73,7 +75,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	if payloadLength == RequestBodyMax {
 		// Payload more than max, create request object
 		createEnv := createResponse{}
-		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/object")
+		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/object/multipart")
 		resp, err := d.tenant.regionalHttpClient.R().
 			SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
 			SetResult(&createEnv).
@@ -88,7 +90,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		if resp.StatusCode() != http.StatusOK {
 			return nil, fmt.Errorf("failed to create object: %s", resp.Status())
 		}
-		reqEnv.ObjectUrl = createEnv.ObjectUrl[0]
+		reqEnv.QueryID = createEnv.QueryID
 
 		// Upload previously read payload and remaining body
 		reader := io.MultiReader(bytes.NewReader(payload), request.Body)
@@ -114,15 +116,17 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 			go func(urlNumber int) {
 				defer wg.Done()
 				hresp, err := resty.New().R().
-					SetBody(bytes.NewReader(b)).
+					SetBody(b).
 					SetDoNotParseResponse(true).
-					Put(createEnv.ObjectUrl[urlNumber])
-				if err != nil && uploadErr != nil {
+					Put(createEnv.ObjectUrls[urlNumber])
+				if err != nil && uploadErr == nil {
 					uploadErr = err
+					return
 				}
 				if hresp.StatusCode() != http.StatusOK {
-					if uploadErr != nil {
-						uploadErr = fmt.Errorf("%v", hresp.StatusCode())
+					if uploadErr == nil {
+						uploadErr = fmt.Errorf("upload failed for part %d with error %v", urlNumber+1, hresp.StatusCode())
+						return
 					}
 				}
 			}(i)
