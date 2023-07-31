@@ -175,6 +175,25 @@ There is currently a limitation on the payload size
 | 50MB  | 3.2 patch 2, 3.3  |
 
 
+### Stream names mappings
+
+These are the mappings of pxGrid Cloud stream names from pxGrid topic
+
+| pxGrid Service                   | pxGrid property name  | pxGrid Cloud stream name            |
+|----------------------------------|-----------------------|-------------------------------------|
+| com.cisco.ise.session            | sessionTopic          | pxcloud--session-sessions           |
+| com.cisco.ise.session            | groupTopic            | pxcloud--session-userGroups         |
+| com.cisco.ise.config.anc         | statusTopic           | pxcloud--anc-operationStatus        |
+| com.cisco.ise.mdm                | endpointTopic         | pxcloud--mdm-endpoints              |
+| com.cisco.ise.config.profiler    | topic                 | pxcloud--profiler-profiles          |
+| com.cisco.ise.radius             | failureTopic          | pxcloud--radius-failures            |
+| com.cisco.ise.trustsec           | policyDownloadTopic   | pxcloud--trustsec-policyDownloads   |
+| com.cisco.ise.config.trustsec    | securityGroupTopic    | pxcloud--trustsec-securityGroups    |
+| com.cisco.ise.config.trustsec    | securityGroupAclTopic | pxcloud--trustsec-securityGroupAcls |
+| com.cisco.ise.sxp                | bindingTopic          | pxcloud--trustsec-bindings          |
+| com.cisco.ise.echo               | echoTopic             | pxcloud--echo-echo                  |
+
+
 ## Terminology
 
 - `App`: An app represents an application that's available on the Cisco DNA - Cloud App Store.
