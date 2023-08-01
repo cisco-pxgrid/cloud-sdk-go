@@ -148,7 +148,7 @@ func TestLargeRequest(t *testing.T) {
 	defer ts.Close()
 	createPath := fmt.Sprintf(directModePath, "dev1", "/query/object/multipart")
 	r.Post(createPath, func(w http.ResponseWriter, r *http.Request) {
-		render.JSON(w, r, createResponse{ObjectUrls: []string{ts.URL + objectStorePath}, QueryID: "testqueryid"})
+		render.JSON(w, r, createMultipartResponse{ObjectUrls: []string{ts.URL + objectStorePath}, QueryID: "testqueryid"})
 	})
 	queryPath := fmt.Sprintf(directModePath, "dev1", "/query")
 	r.Post(queryPath, func(w http.ResponseWriter, r *http.Request) {
