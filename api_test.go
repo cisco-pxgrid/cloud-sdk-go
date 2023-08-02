@@ -146,16 +146,16 @@ func TestSmallQuery(t *testing.T) {
 func TestLargeRequest(t *testing.T) {
 	ts, r := setupTestserver()
 	defer ts.Close()
-	createPath := fmt.Sprintf(directModePath, "dev1", "/query/object")
+	createPath := fmt.Sprintf(directModePath, "dev1", "/query/object/multipart")
 	r.Post(createPath, func(w http.ResponseWriter, r *http.Request) {
-		render.JSON(w, r, createResponse{ObjectUrl: ts.URL + objectStorePath})
+		render.JSON(w, r, createMultipartResponse{ObjectUrls: []string{ts.URL + objectStorePath}, QueryID: "testqueryid"})
 	})
 	queryPath := fmt.Sprintf(directModePath, "dev1", "/query")
 	r.Post(queryPath, func(w http.ResponseWriter, r *http.Request) {
 		reqEnv := envelop{}
 		_ = json.NewDecoder(r.Body).Decode(&reqEnv)
-		if reqEnv.ObjectUrl == "" {
-			http.Error(w, "Missing ObjectUrl", http.StatusBadRequest)
+		if reqEnv.QueryID == "" {
+			http.Error(w, "Missing QueryId", http.StatusBadRequest)
 			return
 		}
 		result := queryResponse{

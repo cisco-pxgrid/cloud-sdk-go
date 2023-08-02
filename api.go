@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -18,10 +19,16 @@ type envelop struct {
 	Headers   map[string][]string `json:"headers"`
 	ObjectUrl string              `json:"objectUrl,omitempty"`
 	Body      string              `json:"body,omitempty"`
+	QueryID   string              `json:"queryId,omitempty"`
 }
 
 type createResponse struct {
 	ObjectUrl string `json:"objectUrl"`
+}
+
+type createMultipartResponse struct {
+	ObjectUrls []string `json:"objectUrls"`
+	QueryID    string   `json:"queryId"`
 }
 
 type queryResponse struct {
@@ -35,8 +42,12 @@ type queryResponse struct {
 }
 
 var (
-	RequestBodyMax    = 300 * 1024
-	RequestObjectMax  = 100 * 1024 * 1024
+	RequestBodyMax   = 300 * 1024
+	RequestObjectMax = 100 * 1024 * 1024
+	//2GB
+	MultipartRequestObjectMax = 2 * 1024 * 1024 * 1024
+	//50MB
+	PartSize          = 50 * 1024 * 1024
 	StatusPollTimeMin = 500 * time.Millisecond
 	StatusPollTimeMax = 15 * time.Second
 )
@@ -69,46 +80,103 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	if payloadLength == RequestBodyMax {
 		// Payload more than max, create request object
 		createEnv := createResponse{}
-		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/object")
+		createMultipartEnv := createMultipartResponse{}
+		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/object/multipart")
 		resp, err := d.tenant.regionalHttpClient.R().
 			SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
-			SetResult(&createEnv).
+			SetResult(&createMultipartEnv).
 			Post(queryPath)
 		if err != nil {
 			return nil, err
 		}
 		if resp.StatusCode() == http.StatusNotFound {
-			// Large API payload is not supported by this device
-			return nil, fmt.Errorf("payload too large for this device")
+			// Multipart Large API payload is not supported by this device, try single part
+			queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/object")
+			resp, err = d.tenant.regionalHttpClient.R().
+				SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
+				SetResult(&createEnv).
+				Post(queryPath)
+			if err != nil {
+				return nil, err
+			}
+			if resp.StatusCode() == http.StatusNotFound {
+				// Large API payload is not supported by this device
+				return nil, fmt.Errorf("payload too large for this device")
+			}
 		}
 		if resp.StatusCode() != http.StatusOK {
 			return nil, fmt.Errorf("failed to create object: %s", resp.Status())
 		}
-		reqEnv.ObjectUrl = createEnv.ObjectUrl
 
 		// Upload previously read payload and remaining body
 		reader := io.MultiReader(bytes.NewReader(payload), request.Body)
+		if createMultipartEnv.QueryID != "" {
+			reqEnv.QueryID = createMultipartEnv.QueryID
 
-		// Read one more byte to check if max is crossed
-		b, err := io.ReadAll(io.LimitReader(reader, int64(RequestObjectMax)+1))
-		if err != nil {
-			return nil, err
-		}
-		if len(b) > RequestObjectMax {
-			return nil, fmt.Errorf("payload too large for this device")
-		}
-		reader = bytes.NewReader(b)
+			// Read one more byte to check if max is crossed
+			payloadTotalLength := 0
+			var wg sync.WaitGroup
+			var uploadErr error
+			for i := 0; ; i++ {
+				b, err := io.ReadAll(io.LimitReader(reader, int64(PartSize)))
+				if err != nil {
+					return nil, err
+				}
+				if len(b) == 0 {
+					break
+				}
+				payloadTotalLength += len(b)
+				if payloadTotalLength > MultipartRequestObjectMax {
+					return nil, fmt.Errorf("payload too large for this device")
+				}
 
-		hresp, err := resty.New().R().
-			SetBody(reader).
-			SetDoNotParseResponse(true).
-			Put(createEnv.ObjectUrl)
-		if err != nil {
-			return nil, err
+				wg.Add(1)
+				go func(urlNumber int) {
+					defer wg.Done()
+					hresp, err := resty.New().R().
+						SetBody(b).
+						SetDoNotParseResponse(true).
+						Put(createMultipartEnv.ObjectUrls[urlNumber])
+					if err != nil && uploadErr == nil {
+						uploadErr = err
+						return
+					}
+					if hresp.StatusCode() != http.StatusOK {
+						if uploadErr == nil {
+							uploadErr = fmt.Errorf("upload failed for part %d with error %v", urlNumber+1, hresp.StatusCode())
+							return
+						}
+					}
+				}(i)
+
+			}
+			wg.Wait()
+			if uploadErr != nil {
+				return nil, uploadErr
+			}
+		} else {
+			reqEnv.ObjectUrl = createEnv.ObjectUrl
+			// Read one more byte to check if max is crossed
+			b, err := io.ReadAll(io.LimitReader(reader, int64(RequestObjectMax)+1))
+			if err != nil {
+				return nil, err
+			}
+			if len(b) > RequestObjectMax {
+				return nil, fmt.Errorf("payload too large for this device")
+			}
+			reader = bytes.NewReader(b)
+			hresp, err := resty.New().R().
+				SetBody(reader).
+				SetDoNotParseResponse(true).
+				Put(createEnv.ObjectUrl)
+			if err != nil {
+				return nil, err
+			}
+			if hresp.StatusCode() != http.StatusOK {
+				return nil, fmt.Errorf("failed to upload request object: %s", hresp.Status())
+			}
 		}
-		if hresp.StatusCode() != http.StatusOK {
-			return nil, fmt.Errorf("failed to upload request object: %s", hresp.Status())
-		}
+
 	} else {
 		// Request size does not require ObjectStore
 		reqEnv.Body = base64.StdEncoding.EncodeToString(payload[0:payloadLength])
@@ -134,7 +202,6 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	if resp.StatusCode() != http.StatusOK {
 		return nil, fmt.Errorf("failed to query: %s", resp.Status())
 	}
-
 	// Poll query status
 	queryId := respEnv.Id
 	pollDuration := StatusPollTimeMin
@@ -178,6 +245,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if resp.StatusCode() != http.StatusOK {
 			return nil, fmt.Errorf("request error %s", resp.Status())
 		}
