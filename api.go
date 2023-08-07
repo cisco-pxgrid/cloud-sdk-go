@@ -119,7 +119,8 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 			var uploadErr error
 			for i := 0; ; i++ {
 				b, err := io.ReadAll(io.LimitReader(reader, int64(PartSize)))
-				if err != nil {
+				//Process bytes if err is EOF and return err only for other type of errors.
+				if err != nil && err != io.EOF {
 					return nil, err
 				}
 				if len(b) == 0 {
