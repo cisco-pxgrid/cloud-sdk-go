@@ -539,9 +539,6 @@ func (app *App) setTenant(tenant *Tenant) error {
 		device := &devices[i]
 		device.tenant = tenant
 		deviceMapInternal.Store(device.id, device)
-		if app.config.DeviceActivationHandler != nil {
-			app.config.DeviceActivationHandler(device)
-		}
 	}
 	app.deviceMap.Store(tenant.id, &deviceMapInternal)
 
