@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/rs/xid"
 )
@@ -21,9 +22,21 @@ type appInstanceResponse struct {
 	TenantName  string `json:"tenant_name"`
 }
 
+type createAppInstanceRequest struct {
+	InstanceID   string `json:"instance_identifier"`
+	InstanceName string `json:"instance_name"`
+}
+
+type createAppInstanceResponse struct {
+	ID     string `json:"application_id"`
+	ApiKey string `json:"api_key"`
+}
+
 // LinkTenantWithNewAppInstance redeems the OTP and links a tenant to a new application instance.
 // InstanceName will be shown in UI to signify the new application instance.
 // The returned	App.ID(), App.ApiKey(), Tenant.ID(), Tenant.Name() and Tenant.ApiToken() must be stored securely.
+//
+// Deprecated: Use CreateAppInstance and LinkTenant instead.
 func (app *App) LinkTenantWithNewAppInstance(otp, instanceName string) (*App, *Tenant, error) {
 	appReq := appInstanceRequest{
 		OTP:          otp,
@@ -58,6 +71,57 @@ func (app *App) LinkTenantWithNewAppInstance(otp, instanceName string) (*App, *T
 		return nil, nil, err
 	}
 	return childApp, tenant, nil
+}
+
+// CreateAppInstance creates an app instance. The instance can then be used to LinkTenant.
+// This is called with the parent app, using the parent app_key to authenticate
+// InstanceName will be shown in UI to signify the new application instance.
+// The returned	App.ID() and App.ApiKey() must be stored securely.
+// This can only be used with application that is registered as multi-instance.
+func (app *App) CreateAppInstance(instanceName string) (*App, error) {
+	req := createAppInstanceRequest{
+		InstanceID:   xid.New().String(),
+		InstanceName: instanceName,
+	}
+
+	var resp createAppInstanceResponse
+	var errorResp errorResponse
+
+	path := fmt.Sprintf(createAppInstancePath, app.config.ID)
+
+	r, err := app.httpClient.R().
+		SetBody(req).
+		SetResult(&resp).
+		SetError(&errorResp).
+		Post(path)
+	if err != nil {
+		return nil, err
+	}
+	if r.IsError() {
+		return nil, errors.New(errorResp.GetError())
+	}
+
+	appConfig := app.newAppConfig(resp.ID, resp.ApiKey)
+	return New(appConfig)
+}
+
+// DeleteAppInstance deletes an app instance using the AppId of the instance
+// This is called with the parent app, using the parent app_key to authenticate.
+func (app *App) DeleteAppInstance(instanceAppId string) error {
+	var errorResp errorResponse
+
+	path := fmt.Sprintf(deleteAppInstancePath, instanceAppId)
+
+	r, err := app.httpClient.R().
+		SetError(&errorResp).
+		Delete(path)
+	if err != nil {
+		return err
+	}
+	if r.IsError() {
+		return errors.New(errorResp.GetError())
+	}
+	return nil
 }
 
 // SetAppInstance adds an application instance.

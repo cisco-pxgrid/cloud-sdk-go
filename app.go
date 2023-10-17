@@ -19,11 +19,14 @@ import (
 )
 
 const (
-	newAppInstancePath = "/idm/api/v1/appregistry/otp/new"
-	redeemPath         = "/idm/api/v1/appregistry/otp/redeem"
-	unlinkPath         = "/idm/api/v1/appregistry/applications/%s/tenants/%s"
-	getDevicesPath     = "/api/uno/v1/registry/devices"
-	directModePath     = "/api/dxhub/v2/apiproxy/request/%s/direct%s"
+	// newAppInstancePath creates and links the tenant at the same time
+	newAppInstancePath    = "/idm/api/v1/appregistry/otp/new"
+	createAppInstancePath = "/idm/api/v1/appregistry/applications/%s/instances"
+	deleteAppInstancePath = "/idm/api/v1/appregistry/applications/%s"
+	redeemPath            = "/idm/api/v1/appregistry/otp/redeem"
+	unlinkPath            = "/idm/api/v1/appregistry/applications/%s/tenants/%s"
+	getDevicesPath        = "/api/uno/v1/registry/devices"
+	directModePath        = "/api/dxhub/v2/apiproxy/request/%s/direct%s"
 )
 
 var tlsConfig = tls.Config{
