@@ -45,37 +45,16 @@ type config struct {
 	AppInstance appInstanceConfig `yaml:"appInstance"`
 }
 
-var selectedDevice *sdk.Device
-
 func messageHandler(id string, d *sdk.Device, stream string, p []byte) {
 	logger.Infof("Message received. tenant=%s device=%s stream=%s message=%s\n", d.Tenant().Name(), d.Name(), stream, string(p))
 }
 
 func activationHandler(d *sdk.Device) {
 	logger.Infof("Device activation: %v", d)
-	devices, err := d.Tenant().GetDevices()
-	if err == nil {
-		selectedDevice = &devices[0]
-		logger.Infof("Selected first device. name=%s tenant=%s id=%s ", selectedDevice.Name(), selectedDevice.Tenant().Name(), selectedDevice.ID())
-	} else {
-		logger.Errorf("Failed to GetDevices: %v", err)
-	}
 }
 
 func deactivationHandler(d *sdk.Device) {
 	logger.Infof("Device deactivation: %v", d)
-	devices, err := d.Tenant().GetDevices()
-	if err == nil {
-		if len(devices) > 0 {
-			selectedDevice = &devices[0]
-			logger.Infof("Selected first device. name=%s tenant=%s id=%s ", selectedDevice.Name(), selectedDevice.Tenant().Name(), selectedDevice.ID())
-		} else {
-			selectedDevice = nil
-			logger.Infof("No device found")
-		}
-	} else {
-		logger.Errorf("Failed to GetDevices: %v", err)
-	}
 }
 
 func loadConfig(file string) (*config, error) {
@@ -104,6 +83,7 @@ func main() {
 	configFile := flag.String("config", "", "Configuration yaml file to use (required)")
 	debug := flag.Bool("debug", false, "Enable debug output")
 	insecure := flag.Bool("insecure", false, "Insecure TLS")
+	deleteInstance := flag.Bool("delete", false, "Delete app instance")
 	flag.Parse()
 	config, err := loadConfig(*configFile)
 	if err != nil {
@@ -151,11 +131,23 @@ func main() {
 
 	var ac = &config.AppInstance
 	var tc = &ac.Tenant
+
+	if *deleteInstance {
+		// SDK Delete app instance
+		app.DeleteAppInstance(ac.Id)
+		os.Exit(0)
+	}
+
 	var tenant *sdk.Tenant
 	var appInstance *sdk.App
 	if ac.Otp != "" {
-		// SDK link tenant with OTP
-		appInstance, tenant, err = app.LinkTenantWithNewAppInstance(ac.Otp, ac.Name)
+		// SDK Link tenant with new app instance
+		appInstance, err = app.CreateAppInstance(ac.Name)
+		if err != nil {
+			logger.Errorf("Failed to create app instance: %v", err)
+			os.Exit(-1)
+		}
+		tenant, err = appInstance.LinkTenant(ac.Otp)
 		if err != nil {
 			logger.Errorf("Failed to link tenant: %v", err)
 			os.Exit(-1)
@@ -168,7 +160,7 @@ func main() {
 		tc.Token = tenant.ApiToken()
 		config.store(*configFile)
 	} else {
-		// SDK set app instance with existing id and key
+		// SDK Set app instance with existing id and key
 		appInstance, err = app.SetAppInstance(ac.Id, ac.ApiKey)
 		if err != nil {
 			logger.Errorf("Failed to set app: %v", err)
@@ -190,10 +182,11 @@ func main() {
 		os.Exit(-1)
 	}
 	if len(devices) > 0 {
-		device := devices[0]
-		logger.Infof("Selected first device name=%s tenant=%s id=%s ", device.Name(), device.Tenant().Name(), device.ID())
+		for _, d := range devices {
+			logger.Infof("Activated device: %v", d.Name())
+		}
 	} else {
-		logger.Infof("No device found")
+		logger.Infof("No device found yet")
 	}
 
 	// Catch termination signal

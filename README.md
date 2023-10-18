@@ -97,15 +97,15 @@ func main() {
 }
 ```
 
-### Connect and disconnect the app with a tenant
+### Link and unlink with a tenant
 
 ```go
-tenant, err := app.LinkTenant("otp-obtained-from-cisco-en-cloud-portal")
+tenant, err := app.LinkTenant("otp-obtained-from-cisco-dna-portal")
 if err != nil {
     fmt.Printf("Failed to obtain tenant information using supplied OTP: %v", err)
 }
 
-// securely store tenant.ID(), tenant.Name() and tenant.ApiToken() as it cannot be retrieved again
+// Securely store tenant.ID(), tenant.Name() and tenant.ApiToken()
 
 err = app.UnlinkTenant(tenant)
 if err != nil {
@@ -113,10 +113,9 @@ if err != nil {
 }
 ```
 
-### Load already linked tenants during restart
+### Setup already linked tenants
 
-In case the app needs to be restarted for some reason, the linked tenant do not have to be relinked.
-They can simply be loaded back as shown the following example:
+If the app needs to be restarted, use the stored tenant info to re-link.
 
 ```go
 tenant, err := app.SetTenant("tenant-id", "tenant-name", "tenant-api-token")
@@ -124,6 +123,25 @@ if err != nil {
     fmt.Printf("Failed to set tenant: %v", err)
 }
 ```
+
+### Create app instances
+
+If the app is registered as multi-instance, create and delete app instances can be used.
+
+```go
+// With the parent app object, create an app instance
+appInstance, err = app.CreateAppInstance(ac.Name)
+
+// Securely store appInstance.ID(), appInstance.ApiKey()
+
+// appInstance can then be used to LinkTenant
+tenant, err = appInstance.LinkTenant("otp-obtained-from-cisco-dna-portal")
+
+// When finish, delete app instance with parent app
+app.DeleteAppInstance(appInstance.ID())
+
+```
+
 
 ### Invoke an ERS or OpenAPI HTTP API call on a device
 
