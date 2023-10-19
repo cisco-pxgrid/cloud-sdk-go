@@ -46,8 +46,12 @@ func activationHandler(d *sdk.Device) {
 	logger.Infof("Device activation: %v", d)
 }
 
-func deActivationHandler(d *sdk.Device) {
+func deactivationHandler(d *sdk.Device) {
 	logger.Infof("Device deactivation: %v", d)
+}
+
+func tenantUnlinkedHandler(t *sdk.Tenant) {
+	logger.Infof("Tenant unlinked: %v", t)
 }
 
 func loadConfig(file string) (*config, error) {
@@ -103,7 +107,8 @@ func main() {
 		GlobalFQDN:                config.App.GlobalFQDN,
 		RegionalFQDN:              config.App.RegionalFQDN,
 		DeviceActivationHandler:   activationHandler,
-		DeviceDeactivationHandler: deActivationHandler,
+		DeviceDeactivationHandler: deactivationHandler,
+		TenantUnlinkedHandler:     tenantUnlinkedHandler,
 		DeviceMessageHandler:      messageHandler,
 		ReadStreamID:              config.App.ReadStream,
 		WriteStreamID:             config.App.WriteStream,
