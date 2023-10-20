@@ -109,9 +109,7 @@ func (app *App) CreateAppInstance(instanceName string) (*App, error) {
 // This is called with the parent app, using the parent app_key to authenticate.
 func (app *App) DeleteAppInstance(instanceAppId string) error {
 	var errorResp errorResponse
-
 	path := fmt.Sprintf(deleteAppInstancePath, instanceAppId)
-
 	r, err := app.httpClient.R().
 		SetError(&errorResp).
 		Delete(path)
@@ -143,6 +141,7 @@ func (app *App) newAppConfig(appID, appApiKey string) Config {
 		ApiKey:                    appApiKey,
 		DeviceActivationHandler:   app.config.DeviceActivationHandler,
 		DeviceDeactivationHandler: app.config.DeviceDeactivationHandler,
+		TenantUnlinkedHandler:     app.config.TenantUnlinkedHandler,
 		DeviceMessageHandler:      app.config.DeviceMessageHandler,
 	}
 }

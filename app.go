@@ -98,6 +98,11 @@ type Config struct {
 	// DeviceDeactivationHandler notifies when a device is deactivated
 	DeviceDeactivationHandler func(device *Device)
 
+	// TenantUnlinkedHandler notifies when a tenant is unlinked from the cloud instead of app calling UnlinkTenant
+	// Not providing a linked handler because it can only be triggered by calling LinkTenant
+	// The stored tenant ID, name and token should be discarded
+	TenantUnlinkedHandler func(tenant *Tenant)
+
 	// DeviceMessageHandler is invoked when a new data message is received
 	DeviceMessageHandler func(messageID string, device *Device, stream string, payload []byte)
 }
@@ -293,14 +298,16 @@ func (app *App) pubsubConnect() error {
 }
 
 const (
-	msgType           = "messageType"
-	msgTypeControl    = "control"
-	msgTypeData       = "data"
-	tenantKey         = "tenant"
-	deviceKey         = "device"
-	msgIDKey          = "messageID"
-	msgTypeActivate   = "device:activate"
-	msgTypeDeactivate = "device:deactivate"
+	msgType              = "messageType"
+	msgTypeControl       = "control"
+	msgTypeData          = "data"
+	tenantKey            = "tenant"
+	deviceKey            = "device"
+	msgIDKey             = "messageID"
+	msgTypeActivate      = "device:activate"
+	msgTypeDeactivate    = "device:deactivate"
+	msgTypeAppConnect    = "app:connect"
+	msgTypeAppDisconnect = "app:disconnect"
 )
 
 // readStreamHandler returns the callback that handles messages received on the app's read stream
@@ -376,6 +383,21 @@ func (app *App) controlMsgHandler(id string, payload []byte) error {
 		if app.config.DeviceDeactivationHandler != nil {
 			app.config.DeviceDeactivationHandler(device)
 		}
+	} else if ctrlPayload.Type == msgTypeAppConnect {
+		// Ignore app connect message because app calls LinkTenant explicitly
+	} else if ctrlPayload.Type == msgTypeAppDisconnect {
+		v, ok = app.tenantMap.Load(ctrlPayload.Info.Tenant)
+		if !ok || v == nil {
+			return fmt.Errorf("unknown tenant: %s", ctrlPayload.Info.Tenant)
+		}
+		tenant := v.(*Tenant)
+		app.tenantMap.Delete(tenant.ID())
+		app.deviceMap.Delete(tenant.ID())
+		if app.config.TenantUnlinkedHandler != nil {
+			app.config.TenantUnlinkedHandler(tenant)
+		}
+	} else {
+		return fmt.Errorf("unknown control message type: %s", ctrlPayload.Type)
 	}
 	return nil
 }
@@ -473,7 +495,12 @@ func (app *App) LinkTenant(otp string) (*Tenant, error) {
 }
 
 // UnlinkTenant unlinks a tenant from the application
+// The stored tenant ID, name and token should be discarded
 func (app *App) UnlinkTenant(tenant *Tenant) error {
+	// Remove from map first to prevent callback to TenantUnlinkedHandler
+	app.tenantMap.Delete(tenant.ID())
+	app.deviceMap.Delete(tenant.ID())
+
 	unlinkPath := fmt.Sprintf(
 		unlinkPath,
 		url.PathEscape(app.config.ID),
@@ -491,9 +518,6 @@ func (app *App) UnlinkTenant(tenant *Tenant) error {
 	if response.IsError() {
 		return errors.New(errorResp.GetError())
 	}
-
-	app.tenantMap.Delete(tenant.ID())
-	app.deviceMap.Delete(tenant.ID())
 
 	return nil
 }

@@ -13,5 +13,6 @@ require (
 	github.com/klauspost/compress v1.15.1 // indirect
 	github.com/rs/xid v1.2.1
 	github.com/stretchr/testify v1.8.1
+	golang.org/x/tools v0.14.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0
 )
