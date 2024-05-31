@@ -19,9 +19,9 @@ type Tenant struct {
 	name     string
 	apiToken string
 
-	app                *App
-	httpClient         *resty.Client
-	regionalHttpClient *resty.Client
+	app                 *App
+	httpClient          *resty.Client
+	regionalHttpClients map[string]*resty.Client
 }
 
 func (t *Tenant) String() string {
@@ -68,6 +68,7 @@ func (t *Tenant) getDevices() ([]Device, error) {
 			region: d.MgtInfo.Region,
 			status: d.Meta.EnrollmentStatus,
 			tenant: t,
+			fqdn:   d.MgtInfo.Fqdn,
 		})
 	}
 
@@ -115,6 +116,7 @@ func (t *Tenant) getDeviceByID(deviceId string) (*Device, error) {
 		region: gdr.MgtInfo.Region,
 		status: gdr.Meta.EnrollmentStatus,
 		tenant: t,
+		fqdn:   gdr.MgtInfo.Fqdn,
 	}, nil
 }
 
@@ -141,12 +143,14 @@ func (t *Tenant) setHttpClient(httpClient *resty.Client) {
 	})
 }
 
-func (t *Tenant) setRegionalHttpClient(regionalHttpClient *resty.Client) {
-	t.regionalHttpClient = regionalHttpClient
-	t.regionalHttpClient.OnBeforeRequest(func(_ *resty.Client, request *resty.Request) error {
-		request.SetHeader("X-API-KEY", t.ApiToken())
-		return nil
-	})
+func (t *Tenant) setRegionalHttpClients(regionalHttpClients map[string]*resty.Client) {
+	t.regionalHttpClients = regionalHttpClients
+	for regionalFQDN := range t.regionalHttpClients {
+		t.regionalHttpClients[regionalFQDN].OnBeforeRequest(func(_ *resty.Client, request *resty.Request) error {
+			request.SetHeader("X-API-KEY", t.ApiToken())
+			return nil
+		})
+	}
 }
 
 func (t *Tenant) MarshalJSON() ([]byte, error) {

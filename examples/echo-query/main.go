@@ -106,7 +106,7 @@ func main() {
 		ID:                        config.App.Id,
 		GetCredentials:            getCredentials,
 		GlobalFQDN:                config.App.GlobalFQDN,
-		RegionalFQDN:              config.App.RegionalFQDN,
+		RegionalFQDNs:             []string{config.App.RegionalFQDN},
 		DeviceActivationHandler:   activationHandler,
 		DeviceDeactivationHandler: deactivationHandler,
 		TenantUnlinkedHandler:     tenantUnlinkedHandler,
