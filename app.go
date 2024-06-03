@@ -190,12 +190,14 @@ func validateConfig(config *Config) error {
 	// sanitize all the input
 	config.ID = strings.TrimSpace(config.ID)
 	if len(config.RegionalFQDNs) == 0 {
+		config.RegionalFQDNs = make([]string, 1)
 		config.RegionalFQDNs[0] = strings.TrimSpace(config.RegionalFQDN)
 	} else {
 		for i, regionalFQDN := range config.RegionalFQDNs {
 			config.RegionalFQDNs[i] = strings.TrimSpace(regionalFQDN)
 		}
 	}
+	log.Logger.Infof("RegionalFQDNs: %v", config.RegionalFQDNs)
 	config.GlobalFQDN = strings.TrimSpace(config.GlobalFQDN)
 	config.ReadStreamID = strings.TrimSpace(config.ReadStreamID)
 	config.WriteStreamID = strings.TrimSpace(config.WriteStreamID)
@@ -577,9 +579,10 @@ func (app *App) setTenant(tenant *Tenant) error {
 		}
 		regionalHttpClient := resty.NewWithClient(app.httpClient.GetClient()).
 			SetBaseURL(regionalHostURL.String())
-		regionalHttpClients[app.config.RegionalFQDN] = regionalHttpClient
+		regionalHttpClients[regionalFQDN] = regionalHttpClient
 	}
 	tenant.setRegionalHttpClients(regionalHttpClients)
+
 	tenant.app = app
 
 	devices, err := tenant.getDevices()

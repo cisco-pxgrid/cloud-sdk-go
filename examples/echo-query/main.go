@@ -17,12 +17,13 @@ import (
 var logger *log.DefaultLogger = &log.DefaultLogger{Level: log.LogLevelInfo}
 
 type appConfig struct {
-	Id           string `yaml:"id"`
-	ApiKey       string `yaml:"apiKey"`
-	GlobalFQDN   string `yaml:"globalFQDN"`
-	RegionalFQDN string `yaml:"regionalFQDN"`
-	ReadStream   string `yaml:"readStream"`
-	WriteStream  string `yaml:"writeStream"`
+	Id            string   `yaml:"id"`
+	ApiKey        string   `yaml:"apiKey"`
+	GlobalFQDN    string   `yaml:"globalFQDN"`
+	RegionalFQDN  string   `yaml:"regionalFQDN"`
+	RegionalFQDNs []string `yaml:"regionalFQDNs"`
+	ReadStream    string   `yaml:"readStream"`
+	WriteStream   string   `yaml:"writeStream"`
 }
 
 type tenantConfig struct {
@@ -106,7 +107,7 @@ func main() {
 		ID:                        config.App.Id,
 		GetCredentials:            getCredentials,
 		GlobalFQDN:                config.App.GlobalFQDN,
-		RegionalFQDNs:             []string{config.App.RegionalFQDN},
+		RegionalFQDNs:             config.App.RegionalFQDNs,
 		DeviceActivationHandler:   activationHandler,
 		DeviceDeactivationHandler: deactivationHandler,
 		TenantUnlinkedHandler:     tenantUnlinkedHandler,

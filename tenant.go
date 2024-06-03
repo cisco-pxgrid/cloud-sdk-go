@@ -144,6 +144,7 @@ func (t *Tenant) setHttpClient(httpClient *resty.Client) {
 }
 
 func (t *Tenant) setRegionalHttpClients(regionalHttpClients map[string]*resty.Client) {
+
 	t.regionalHttpClients = regionalHttpClients
 	for regionalFQDN := range t.regionalHttpClients {
 		t.regionalHttpClients[regionalFQDN].OnBeforeRequest(func(_ *resty.Client, request *resty.Request) error {
