@@ -189,8 +189,9 @@ There is currently a limitation on the payload size
 
 | Size  | From ISE versions |
 |-------|-------------------|
-| 500KB | 3.1 patch 3, 3.2  |
-| 50MB  | 3.2 patch 2, 3.3  |
+| 500KB | 3.1p3, 3.2        |
+| 50MB  | 3.2p2, 3.3        |
+| 2GB   | 3.2p3, 3.3p1, 3.4 |
 
 
 ### Stream names mappings
