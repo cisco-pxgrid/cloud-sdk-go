@@ -161,30 +161,18 @@ func main() {
 		logger.Errorf("No device found. tenant=%s", tenant.Name())
 		os.Exit(-1)
 	}
-	// Select first device
-	device := devices[0]
-	logger.Infof("Selected first device name=%s tenant=%s id=%s", device.Name(), device.Tenant().Name(), device.ID())
 
-	// Setup input
-	var reader io.Reader
-	if *file != "" {
-		f, err := os.Open(*file)
-		if err != nil {
-			panic(err)
+	var filteredDevices []sdk.Device
+	//Filter the devices based on the configured regions
+	for _, device := range devices {
+		for _, configuredRegionalFQDN := range appConfig.RegionalFQDNs {
+			if device.Fqdn() == configuredRegionalFQDN {
+				filteredDevices = append(filteredDevices, device)
+			}
 		}
-		defer f.Close()
-		reader = f
-	} else {
-		reader = os.Stdin
 	}
 
-	// Perform echo-query
-	req, _ := http.NewRequest(http.MethodPost, "/pxgrid/echo/query", reader)
-	resp, err := device.Query(req)
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
+	logger.Infof("List of devices for the configured regions are %v", filteredDevices)
 
 	// Setup output
 	var writer io.Writer
@@ -199,13 +187,44 @@ func main() {
 		writer = os.Stdout
 	}
 
-	// Write body to output
-	n, err := io.Copy(writer, resp.Body)
-	if err != nil {
-		panic(err)
+	// Loop through all the devices of the configured regions
+	for i := 0; i < len(filteredDevices); i++ {
+		device := filteredDevices[i]
+		logger.Infof("Selected device name=%s tenant=%s id=%s region=%s", device.Name(), device.Tenant().Name(), device.ID(), device.Region())
+
+		// Setup input
+		var reader io.Reader
+		if *file != "" {
+			f, err := os.Open(*file)
+			if err != nil {
+				panic(err)
+			}
+			defer f.Close()
+			reader = f
+		} else {
+			reader = os.Stdin
+		}
+
+		// Perform echo-query
+		req, _ := http.NewRequest(http.MethodPost, "/pxgrid/echo/query", reader)
+
+		//req, _ := http.NewRequest(http.MethodGet, "/ers/config/op/systemconfig/iseversion", reader)
+		//req.Header.Add("Content-type", "application/json")
+		//req.Header.Add("Accept", "application/json")
+		resp, err := device.Query(req)
+		if err != nil {
+			panic(err)
+		}
+		defer resp.Body.Close()
+
+		// Write body to output
+		n, err := io.Copy(writer, resp.Body)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println()
+		logger.Infof("Query completed. status=%s bodyLen=%d\n", resp.Status, n)
 	}
-	fmt.Println()
-	logger.Infof("Query completed. status=%s bodyLen=%d\n", resp.Status, n)
 
 	if err = app.Close(); err != nil {
 		panic(err)
