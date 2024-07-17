@@ -94,7 +94,7 @@ func main() {
 	}
 
 	// Log after set logger
-	logger.Warnf("Config: %+v", config)
+	logger.Debugf("Config: %+v", config)
 
 	// SDK App config
 	getCredentials := func() (*sdk.Credentials, error) {
