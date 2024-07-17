@@ -82,6 +82,8 @@ func main() {
 	insecure := flag.Bool("insecure", false, "Insecure TLS")
 	file := flag.String("in", "", "File for input for echo (optional). stdin if not specified")
 	out := flag.String("out", "", "File for output for echo (optional). stdout if not specified")
+	url := flag.String("url", "", "request url")
+	method := flag.String("method", "", "request type")
 	flag.Parse()
 	config, err := loadConfig(*configFile)
 	if err != nil {
@@ -107,6 +109,7 @@ func main() {
 		ID:                        config.App.Id,
 		GetCredentials:            getCredentials,
 		GlobalFQDN:                config.App.GlobalFQDN,
+		RegionalFQDN:              config.App.RegionalFQDN,
 		RegionalFQDNs:             config.App.RegionalFQDNs,
 		DeviceActivationHandler:   activationHandler,
 		DeviceDeactivationHandler: deactivationHandler,
@@ -165,8 +168,14 @@ func main() {
 	var filteredDevices []sdk.Device
 	//Filter the devices based on the configured regions
 	for _, device := range devices {
-		for _, configuredRegionalFQDN := range appConfig.RegionalFQDNs {
-			if device.Fqdn() == configuredRegionalFQDN {
+		if len(appConfig.RegionalFQDNs) != 0 {
+			for _, configuredRegionalFQDN := range appConfig.RegionalFQDNs {
+				if device.Fqdn() == configuredRegionalFQDN {
+					filteredDevices = append(filteredDevices, device)
+				}
+			}
+		} else {
+			if device.Fqdn() == appConfig.RegionalFQDN {
 				filteredDevices = append(filteredDevices, device)
 			}
 		}
@@ -205,12 +214,15 @@ func main() {
 			reader = os.Stdin
 		}
 
-		// Perform echo-query
-		req, _ := http.NewRequest(http.MethodPost, "/pxgrid/echo/query", reader)
+		if *method == "" {
+			*method = http.MethodPost
+		}
+		if *url == "" {
+			*url = "/pxgrid/echo/query"
+		}
 
-		//req, _ := http.NewRequest(http.MethodGet, "/ers/config/op/systemconfig/iseversion", reader)
-		//req.Header.Add("Content-type", "application/json")
-		//req.Header.Add("Accept", "application/json")
+		// Perform api request
+		req, _ := http.NewRequest(*method, *url, reader)
 		resp, err := device.Query(req)
 		if err != nil {
 			panic(err)
