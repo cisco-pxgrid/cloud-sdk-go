@@ -146,8 +146,8 @@ func (t *Tenant) setHttpClient(httpClient *resty.Client) {
 func (t *Tenant) setRegionalHttpClients(regionalHttpClients map[string]*resty.Client) {
 
 	t.regionalHttpClients = regionalHttpClients
-	for regionalFQDN := range t.regionalHttpClients {
-		t.regionalHttpClients[regionalFQDN].OnBeforeRequest(func(_ *resty.Client, request *resty.Request) error {
+	for _, regionalHttpClient := range t.regionalHttpClients {
+		regionalHttpClient.OnBeforeRequest(func(_ *resty.Client, request *resty.Request) error {
 			request.SetHeader("X-API-KEY", t.ApiToken())
 			return nil
 		})

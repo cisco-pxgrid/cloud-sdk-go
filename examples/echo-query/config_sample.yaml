@@ -2,7 +2,8 @@ app:
   id: replace_with_app_id
   apiKey: replace_with_api_key
   globalFQDN: dnaservices.cisco.com
-  regionalFQDN: neoffers.cisco.com
+  regionalFQDNs:
+  - neoffers.cisco.com
   readStream: replace_with_read_stream
   writeStream: replace_with_write_stream
 

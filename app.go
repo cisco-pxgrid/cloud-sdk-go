@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -233,6 +234,7 @@ func (app *App) Close() error {
 		for _, connection := range app.conn {
 			connection.Disconnect()
 		}
+		app.conn = nil
 	}
 	app.ctxCancel()
 	app.wg.Wait()
@@ -265,6 +267,7 @@ func (app *App) close() error {
 		for _, connection := range app.conn {
 			connection.Disconnect()
 		}
+		app.conn = nil
 	}
 
 	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
@@ -649,13 +652,21 @@ func (app *App) startPubsubConnect() {
 					//reset backoff factor for successful connection
 					backoffFactor = 0
 
-					for _, connection := range app.conn {
-						select {
-						case err = <-connection.Error:
+					cases := make([]reflect.SelectCase, len(app.conn))
+					for i, connection := range app.conn {
+						cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(connection.Error)}
+					}
+					cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(app.ctx.Done())})
+					for {
+						chosen, value, ok := reflect.Select(cases)
+						if !ok {
+							// The chosen channel has been closed, so zero out the channel to disable the case
+							cases[chosen].Chan = reflect.ValueOf(nil)
+							return
+						} else {
+							err = fmt.Errorf(value.String())
 							app.close()
 							app.reportError(err)
-						case <-app.ctx.Done():
-							return
 						}
 					}
 				}

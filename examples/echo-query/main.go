@@ -20,7 +20,6 @@ type appConfig struct {
 	Id            string   `yaml:"id"`
 	ApiKey        string   `yaml:"apiKey"`
 	GlobalFQDN    string   `yaml:"globalFQDN"`
-	RegionalFQDN  string   `yaml:"regionalFQDN"`
 	RegionalFQDNs []string `yaml:"regionalFQDNs"`
 	ReadStream    string   `yaml:"readStream"`
 	WriteStream   string   `yaml:"writeStream"`
@@ -109,7 +108,6 @@ func main() {
 		ID:                        config.App.Id,
 		GetCredentials:            getCredentials,
 		GlobalFQDN:                config.App.GlobalFQDN,
-		RegionalFQDN:              config.App.RegionalFQDN,
 		RegionalFQDNs:             config.App.RegionalFQDNs,
 		DeviceActivationHandler:   activationHandler,
 		DeviceDeactivationHandler: deactivationHandler,
@@ -197,46 +195,44 @@ func main() {
 	}
 
 	// Loop through all the devices of the configured regions
-	for i := 0; i < len(filteredDevices); i++ {
-		device := filteredDevices[i]
-		logger.Infof("Selected device name=%s tenant=%s id=%s region=%s", device.Name(), device.Tenant().Name(), device.ID(), device.Region())
+	device := filteredDevices[0]
+	logger.Infof("Selected device name=%s tenant=%s id=%s region=%s", device.Name(), device.Tenant().Name(), device.ID(), device.Region())
 
-		// Setup input
-		var reader io.Reader
-		if *file != "" {
-			f, err := os.Open(*file)
-			if err != nil {
-				panic(err)
-			}
-			defer f.Close()
-			reader = f
-		} else {
-			reader = os.Stdin
-		}
-
-		if *method == "" {
-			*method = http.MethodPost
-		}
-		if *url == "" {
-			*url = "/pxgrid/echo/query"
-		}
-
-		// Perform api request
-		req, _ := http.NewRequest(*method, *url, reader)
-		resp, err := device.Query(req)
+	// Setup input
+	var reader io.Reader
+	if *file != "" {
+		f, err := os.Open(*file)
 		if err != nil {
 			panic(err)
 		}
-		defer resp.Body.Close()
-
-		// Write body to output
-		n, err := io.Copy(writer, resp.Body)
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println()
-		logger.Infof("Query completed. status=%s bodyLen=%d\n", resp.Status, n)
+		defer f.Close()
+		reader = f
+	} else {
+		reader = os.Stdin
 	}
+
+	if *method == "" {
+		*method = http.MethodPost
+	}
+	if *url == "" {
+		*url = "/pxgrid/echo/query"
+	}
+
+	// Perform api request
+	req, _ := http.NewRequest(*method, *url, reader)
+	resp, err := device.Query(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	// Write body to output
+	n, err := io.Copy(writer, resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println()
+	logger.Infof("Query completed. status=%s bodyLen=%d\n", resp.Status, n)
 
 	if err = app.Close(); err != nil {
 		panic(err)
