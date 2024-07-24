@@ -16,6 +16,7 @@ type Device struct {
 	region string
 	status string
 	tenant *Tenant
+	fqdn   string
 }
 
 func (d *Device) String() string {
@@ -48,6 +49,11 @@ func (d *Device) Tenant() *Tenant {
 	return d.tenant
 }
 
+// Region returns device's fqdn
+func (d *Device) Fqdn() string {
+	return d.fqdn
+}
+
 // DeviceStatus represents the status of a device
 type DeviceStatus struct {
 	Status string
@@ -61,6 +67,7 @@ type getDeviceResponse struct {
 	} `json:"deviceInfo"`
 	MgtInfo struct {
 		Region string `json:"region"`
+		Fqdn   string `json:"fqdn"`
 	} `json:"mgtInfo"`
 	Meta struct {
 		EnrollmentStatus string `json:"enrollmentStatus"`

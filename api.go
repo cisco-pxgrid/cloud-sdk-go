@@ -54,6 +54,7 @@ var (
 
 const (
 	X_API_PROXY_COMMUNICATION_SYTLE = "X-Api-Proxy-Communication-Style"
+	clientRegionError               = "Failed to find the client for region"
 )
 
 // Query for pxGrid, ERS or other API
@@ -82,7 +83,13 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		createEnv := createResponse{}
 		createMultipartEnv := createMultipartResponse{}
 		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/object/multipart")
-		resp, err := d.tenant.regionalHttpClient.R().
+
+		regionalClient := d.tenant.regionalHttpClients[d.Fqdn()]
+		if regionalClient == nil {
+			return nil, fmt.Errorf("%s - %s", clientRegionError, d.Fqdn())
+		}
+
+		resp, err := regionalClient.R().
 			SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
 			SetResult(&createMultipartEnv).
 			Post(queryPath)
@@ -92,7 +99,13 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		if resp.StatusCode() == http.StatusNotFound {
 			// Multipart Large API payload is not supported by this device, try single part
 			queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/object")
-			resp, err = d.tenant.regionalHttpClient.R().
+
+			regionalClient := d.tenant.regionalHttpClients[d.Fqdn()]
+			if regionalClient == nil {
+				return nil, fmt.Errorf("%s - %s", clientRegionError, d.Fqdn())
+			}
+
+			resp, err = regionalClient.R().
 				SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
 				SetResult(&createEnv).
 				Post(queryPath)
@@ -186,7 +199,13 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	// Trigger query
 	respEnv := queryResponse{}
 	queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query")
-	resp, err := d.tenant.regionalHttpClient.R().
+
+	regionalClient := d.tenant.regionalHttpClients[d.Fqdn()]
+	if regionalClient == nil {
+		return nil, fmt.Errorf("%s - %s", clientRegionError, d.Fqdn())
+	}
+
+	resp, err := regionalClient.R().
 		SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
 		SetBody(reqEnv).
 		SetResult(&respEnv).
@@ -216,7 +235,13 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 
 		// Poll
 		queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), "/query/"+queryId)
-		resp, err = d.tenant.regionalHttpClient.R().
+
+		regionalClient := d.tenant.regionalHttpClients[d.Fqdn()]
+		if regionalClient == nil {
+			return nil, fmt.Errorf("%s - %s", clientRegionError, d.Fqdn())
+		}
+
+		resp, err = regionalClient.R().
 			SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
 			SetBody(respEnv).
 			SetResult(&respEnv).
@@ -240,7 +265,12 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	var reader io.ReadCloser
 	if respEnv.ObjectUrl != "" {
 		// Download object
-		hresp, err := d.tenant.regionalHttpClient.R().
+		regionalClient := d.tenant.regionalHttpClients[d.Fqdn()]
+		if regionalClient == nil {
+			return nil, fmt.Errorf("%s - %s", clientRegionError, d.Fqdn())
+		}
+
+		hresp, err := regionalClient.R().
 			SetDoNotParseResponse(true).
 			Get(respEnv.ObjectUrl)
 		if err != nil {
@@ -270,8 +300,11 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 
 func (d *Device) fallbackQuery(request *http.Request, payload []byte) (*http.Response, error) {
 	queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), request.URL)
-
-	req := d.tenant.regionalHttpClient.R()
+	regionalClient := d.tenant.regionalHttpClients[d.Fqdn()]
+	if regionalClient == nil {
+		return nil, fmt.Errorf("%s - %s", clientRegionError, d.Fqdn())
+	}
+	req := regionalClient.R()
 
 	if request.Header != nil {
 		for name, values := range request.Header {
@@ -307,7 +340,7 @@ func (q *queryCloser) Close() error {
 
 	// Delete query
 	queryPath := fmt.Sprintf(directModePath, url.PathEscape(q.device.ID()), "/query/"+q.queryId)
-	req := q.device.tenant.regionalHttpClient.R()
+	req := q.device.tenant.regionalHttpClients[q.device.Fqdn()].R()
 	req.SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync")
 	_, err := req.Execute(http.MethodDelete, queryPath)
 	return err

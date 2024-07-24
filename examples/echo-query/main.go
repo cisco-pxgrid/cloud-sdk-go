@@ -17,12 +17,12 @@ import (
 var logger *log.DefaultLogger = &log.DefaultLogger{Level: log.LogLevelInfo}
 
 type appConfig struct {
-	Id           string `yaml:"id"`
-	ApiKey       string `yaml:"apiKey"`
-	GlobalFQDN   string `yaml:"globalFQDN"`
-	RegionalFQDN string `yaml:"regionalFQDN"`
-	ReadStream   string `yaml:"readStream"`
-	WriteStream  string `yaml:"writeStream"`
+	Id            string   `yaml:"id"`
+	ApiKey        string   `yaml:"apiKey"`
+	GlobalFQDN    string   `yaml:"globalFQDN"`
+	RegionalFQDNs []string `yaml:"regionalFQDNs"`
+	ReadStream    string   `yaml:"readStream"`
+	WriteStream   string   `yaml:"writeStream"`
 }
 
 type tenantConfig struct {
@@ -81,6 +81,8 @@ func main() {
 	insecure := flag.Bool("insecure", false, "Insecure TLS")
 	file := flag.String("in", "", "File for input for echo (optional). stdin if not specified")
 	out := flag.String("out", "", "File for output for echo (optional). stdout if not specified")
+	url := flag.String("url", "", "request url")
+	method := flag.String("method", "", "request type")
 	flag.Parse()
 	config, err := loadConfig(*configFile)
 	if err != nil {
@@ -106,7 +108,7 @@ func main() {
 		ID:                        config.App.Id,
 		GetCredentials:            getCredentials,
 		GlobalFQDN:                config.App.GlobalFQDN,
-		RegionalFQDN:              config.App.RegionalFQDN,
+		RegionalFQDNs:             config.App.RegionalFQDNs,
 		DeviceActivationHandler:   activationHandler,
 		DeviceDeactivationHandler: deactivationHandler,
 		TenantUnlinkedHandler:     tenantUnlinkedHandler,
@@ -160,9 +162,41 @@ func main() {
 		logger.Errorf("No device found. tenant=%s", tenant.Name())
 		os.Exit(-1)
 	}
-	// Select first device
-	device := devices[0]
-	logger.Infof("Selected first device name=%s tenant=%s id=%s", device.Name(), device.Tenant().Name(), device.ID())
+
+	var filteredDevices []sdk.Device
+	//Filter the devices based on the configured regions
+	for _, device := range devices {
+		if len(appConfig.RegionalFQDNs) != 0 {
+			for _, configuredRegionalFQDN := range appConfig.RegionalFQDNs {
+				if device.Fqdn() == configuredRegionalFQDN {
+					filteredDevices = append(filteredDevices, device)
+				}
+			}
+		} else {
+			if device.Fqdn() == appConfig.RegionalFQDN {
+				filteredDevices = append(filteredDevices, device)
+			}
+		}
+	}
+
+	logger.Infof("List of devices for the configured regions are %v", filteredDevices)
+
+	// Setup output
+	var writer io.Writer
+	if *out != "" {
+		f, err := os.Create(*out)
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+		writer = f
+	} else {
+		writer = os.Stdout
+	}
+
+	// Loop through all the devices of the configured regions
+	device := filteredDevices[0]
+	logger.Infof("Selected device name=%s tenant=%s id=%s region=%s", device.Name(), device.Tenant().Name(), device.ID(), device.Region())
 
 	// Setup input
 	var reader io.Reader
@@ -177,26 +211,20 @@ func main() {
 		reader = os.Stdin
 	}
 
-	// Perform echo-query
-	req, _ := http.NewRequest(http.MethodPost, "/pxgrid/echo/query", reader)
+	if *method == "" {
+		*method = http.MethodPost
+	}
+	if *url == "" {
+		*url = "/pxgrid/echo/query"
+	}
+
+	// Perform api request
+	req, _ := http.NewRequest(*method, *url, reader)
 	resp, err := device.Query(req)
 	if err != nil {
 		panic(err)
 	}
 	defer resp.Body.Close()
-
-	// Setup output
-	var writer io.Writer
-	if *out != "" {
-		f, err := os.Create(*out)
-		if err != nil {
-			panic(err)
-		}
-		defer f.Close()
-		writer = f
-	} else {
-		writer = os.Stdout
-	}
 
 	// Write body to output
 	n, err := io.Copy(writer, resp.Body)

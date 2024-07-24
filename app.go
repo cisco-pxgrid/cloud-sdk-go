@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +62,9 @@ type Config struct {
 	// Hostname of the regional cloud environment
 	RegionalFQDN string
 
+	// Hostnames of the regional cloud environments
+	RegionalFQDNs []string
+
 	// Hostname of the global cloud environment
 	GlobalFQDN string
 
@@ -111,8 +115,8 @@ type Config struct {
 // App struct is the entry point for the pxGrid Cloud Go SDK
 type App struct {
 	config     Config
-	httpClient *resty.Client      // global HTTP client
-	conn       *pubsub.Connection // pubsub WebSocket connection
+	httpClient *resty.Client        // global HTTP client
+	conn       []*pubsub.Connection // pubsub WebSocket connection
 
 	tenantMap sync.Map
 	deviceMap sync.Map
@@ -130,7 +134,7 @@ var (
 )
 
 func (app *App) String() string {
-	return fmt.Sprintf("App[ID: %s, RegionalFQDN: %s]", app.config.ID, app.config.RegionalFQDN)
+	return fmt.Sprintf("App[ID: %s, RegionalFQDNs: %v]", app.config.ID, app.config.RegionalFQDNs)
 }
 
 // New creates and returns a new instance of App
@@ -186,7 +190,15 @@ func New(config Config) (*App, error) {
 func validateConfig(config *Config) error {
 	// sanitize all the input
 	config.ID = strings.TrimSpace(config.ID)
-	config.RegionalFQDN = strings.TrimSpace(config.RegionalFQDN)
+	if len(config.RegionalFQDNs) == 0 {
+		config.RegionalFQDNs = make([]string, 1)
+		config.RegionalFQDNs[0] = strings.TrimSpace(config.RegionalFQDN)
+	} else {
+		for i, regionalFQDN := range config.RegionalFQDNs {
+			config.RegionalFQDNs[i] = strings.TrimSpace(regionalFQDN)
+		}
+	}
+	log.Logger.Infof("RegionalFQDNs: %v", config.RegionalFQDNs)
 	config.GlobalFQDN = strings.TrimSpace(config.GlobalFQDN)
 	config.ReadStreamID = strings.TrimSpace(config.ReadStreamID)
 	config.WriteStreamID = strings.TrimSpace(config.WriteStreamID)
@@ -195,9 +207,14 @@ func validateConfig(config *Config) error {
 	if config.ID == "" {
 		return errors.New("ID must not be empty")
 	}
+	for _, regionalFQDN := range config.RegionalFQDNs {
+		if regionalFQDN == "" {
+			return errors.New("RegionalFQDN must not be empty")
+		}
+	}
 
-	if config.RegionalFQDN == "" || config.GlobalFQDN == "" {
-		return errors.New("RegionalFQDN and GlobalFQDN must not be empty")
+	if config.GlobalFQDN == "" {
+		return errors.New("GlobalFQDN must not be empty")
 	}
 
 	if config.ReadStreamID == "" || config.WriteStreamID == "" {
@@ -214,7 +231,10 @@ func validateConfig(config *Config) error {
 // Close shuts down the App instance and releases all the resources
 func (app *App) Close() error {
 	if app.conn != nil {
-		app.conn.Disconnect()
+		for _, connection := range app.conn {
+			connection.Disconnect()
+		}
+		app.conn = nil
 	}
 	app.ctxCancel()
 	app.wg.Wait()
@@ -244,7 +264,10 @@ func (app *App) reportError(err error) {
 // Close shuts down the App instance and releases all the resources
 func (app *App) close() error {
 	if app.conn != nil {
-		app.conn.Disconnect()
+		for _, connection := range app.conn {
+			connection.Disconnect()
+		}
+		app.conn = nil
 	}
 
 	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
@@ -263,37 +286,44 @@ func (app *App) close() error {
 // pubsubConnect opens a websocket connection to pxGrid Cloud
 func (app *App) pubsubConnect() error {
 	var err error
-	app.conn, err = pubsub.NewConnection(pubsub.Config{
-		GroupID: app.config.GroupID,
-		Domain:  url.PathEscape(app.config.RegionalFQDN),
-		APIKeyProvider: func() ([]byte, error) {
-			if app.config.GetCredentials != nil {
-				credentials, e := app.config.GetCredentials()
-				if e != nil {
-					return nil, e
+	for _, fqdn := range app.config.RegionalFQDNs {
+
+		connection, connectionErr := pubsub.NewConnection(pubsub.Config{
+			GroupID: app.config.GroupID,
+			Domain:  url.PathEscape(fqdn),
+			APIKeyProvider: func() ([]byte, error) {
+				if app.config.GetCredentials != nil {
+					credentials, e := app.config.GetCredentials()
+					if e != nil {
+						return nil, e
+					}
+					return credentials.ApiKey, e
+				} else {
+					return []byte(app.config.ApiKey), nil
 				}
-				return credentials.ApiKey, e
-			} else {
-				return []byte(app.config.ApiKey), nil
-			}
-		},
-		Transport: app.config.Transport,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create pubsub connection: %v", err)
+			},
+			Transport: app.config.Transport,
+		})
+		if connectionErr != nil {
+			return fmt.Errorf("failed to create pubsub connection: %v", connectionErr)
+		}
+		app.conn = append(app.conn, connection)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	err = app.conn.Connect(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to connect pubsub connection: %v", err)
+	for _, connection := range app.conn {
+		err = connection.Connect(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to connect pubsub connection: %v", err)
+		}
+
+		err = connection.Subscribe(app.config.ReadStreamID, app.readStreamHandler())
+		if err != nil {
+			return fmt.Errorf("failed to subscribe: %v", err)
+		}
 	}
 
-	err = app.conn.Subscribe(app.config.ReadStreamID, app.readStreamHandler())
-	if err != nil {
-		return fmt.Errorf("failed to subscribe: %v", err)
-	}
 	return nil
 }
 
@@ -540,18 +570,22 @@ func (app *App) SetTenant(id, name, apiToken string) (*Tenant, error) {
 
 func (app *App) setTenant(tenant *Tenant) error {
 	app.tenantMap.Store(tenant.id, tenant)
+	regionalHttpClients := make(map[string]*resty.Client)
+	for _, regionalFQDN := range app.config.RegionalFQDNs {
+		httpClient := resty.NewWithClient(app.httpClient.GetClient()).
+			SetBaseURL(app.httpClient.HostURL)
+		tenant.setHttpClient(httpClient)
 
-	httpClient := resty.NewWithClient(app.httpClient.GetClient()).
-		SetBaseURL(app.httpClient.HostURL)
-	tenant.setHttpClient(httpClient)
-
-	regionalHostURL := url.URL{
-		Scheme: defaultHTTPScheme,
-		Path:   url.PathEscape(app.config.RegionalFQDN),
+		regionalHostURL := url.URL{
+			Scheme: defaultHTTPScheme,
+			Path:   url.PathEscape(regionalFQDN),
+		}
+		regionalHttpClient := resty.NewWithClient(app.httpClient.GetClient()).
+			SetBaseURL(regionalHostURL.String())
+		regionalHttpClients[regionalFQDN] = regionalHttpClient
 	}
-	regionalHttpClient := resty.NewWithClient(app.httpClient.GetClient()).
-		SetBaseURL(regionalHostURL.String())
-	tenant.setRegionalHttpClient(regionalHttpClient)
+	tenant.setRegionalHttpClients(regionalHttpClients)
+
 	tenant.app = app
 
 	devices, err := tenant.getDevices()
@@ -618,12 +652,22 @@ func (app *App) startPubsubConnect() {
 					//reset backoff factor for successful connection
 					backoffFactor = 0
 
-					select {
-					case err = <-app.conn.Error:
-						app.close()
-						app.reportError(err)
-					case <-app.ctx.Done():
-						return
+					cases := make([]reflect.SelectCase, len(app.conn))
+					for i, connection := range app.conn {
+						cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(connection.Error)}
+					}
+					cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(app.ctx.Done())})
+					for {
+						chosen, value, ok := reflect.Select(cases)
+						if !ok {
+							// The chosen channel has been closed, so zero out the channel to disable the case
+							cases[chosen].Chan = reflect.ValueOf(nil)
+							return
+						} else {
+							err = fmt.Errorf(value.String())
+							app.close()
+							app.reportError(err)
+						}
 					}
 				}
 
