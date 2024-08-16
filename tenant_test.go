@@ -85,6 +85,7 @@ func (suite *TenantTestSuite) Test_getDevices() {
 			region: "us-west-2",
 			status: "un-enrolled",
 			tenant: &tenant,
+			fqdn:   "int-mm.tesseractinternal.com",
 		},
 	}
 
@@ -145,6 +146,7 @@ func (suite *TenantTestSuite) Test_getDeviceByID() {
 		region: "us-west-2",
 		status: "un-enrolled",
 		tenant: &tenant,
+		fqdn:   "int-mm.tesseractinternal.com",
 	}
 	httpClient := resty.New().SetBaseURL("https://test.com")
 	tenant.setHttpClient(httpClient)

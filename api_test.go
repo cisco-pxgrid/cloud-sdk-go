@@ -33,7 +33,6 @@ func init() {
 }
 
 func setupTestserver() (*httptest.Server, *chi.Mux) {
-
 	r := chi.NewRouter()
 	r.Post(redeemPath, func(w http.ResponseWriter, r *http.Request) {
 		resp := redeemOTPResponse{
@@ -43,11 +42,13 @@ func setupTestserver() (*httptest.Server, *chi.Mux) {
 		}
 		render.JSON(w, r, resp)
 	})
+
+	deviceResponse := getDeviceResponse{ID: "dev1"}
 	r.Get(getDevicesPath, func(w http.ResponseWriter, r *http.Request) {
-		d := getDeviceResponse{ID: "dev1"}
-		devices := []getDeviceResponse{d}
+		devices := []getDeviceResponse{deviceResponse}
 		render.JSON(w, r, devices)
 	})
+
 	r.Put(objectStorePath, func(w http.ResponseWriter, r *http.Request) {})
 	r.Get(objectStorePath, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("object1")) })
 	r.Get(pubsubPath, func(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +62,11 @@ func setupTestserver() (*httptest.Server, *chi.Mux) {
 
 	// Test server
 	ts := httptest.NewServer(r)
+
+	// Set URL
+	url, _ := url.Parse(ts.URL)
+	deviceResponse.MgtInfo.Fqdn = url.Host
+
 	return ts, r
 }
 
