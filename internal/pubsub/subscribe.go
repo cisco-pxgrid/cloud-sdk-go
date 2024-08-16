@@ -129,6 +129,8 @@ func (c *internalConnection) subscriber(sub *subscription) {
 	consumeCtx := ""
 loop:
 	for {
+		activity := false
+
 		// send consume message for requesting data from the server
 		respCh, err := c.sendConsumeMessage(sub.id, consumeCtx)
 		if err != nil {
@@ -155,6 +157,9 @@ loop:
 						log.Logger.Errorf("Received consume message for stream %s, was expecting messages for stream %s", stream, sub.stream)
 						continue
 					}
+					if len(messages) > 0 {
+						activity = true
+					}
 					for _, m := range messages {
 						payload, err := base64.StdEncoding.DecodeString(m.Payload)
 						sub.callback(err, m.MsgID, m.Headers, payload)
@@ -172,11 +177,14 @@ loop:
 				break loop
 			}
 		}
-		select {
-		case <-sub.ctx.Done():
-			// user unsubscribed from the stream
-			break loop
-		case <-time.After(c.config.PollInterval):
+		// Sleep only if no activity
+		if !activity {
+			select {
+			case <-sub.ctx.Done():
+				// user unsubscribed from the stream
+				break loop
+			case <-time.After(c.config.PollInterval):
+			}
 		}
 	}
 	log.Logger.Debugf("Stopped subscriber thread for %s", sub.stream)
