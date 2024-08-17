@@ -664,7 +664,7 @@ func (app *App) startPubsubConnect() {
 							cases[chosen].Chan = reflect.ValueOf(nil)
 							return
 						} else {
-							err = fmt.Errorf(value.String())
+							err = fmt.Errorf("application connection closed: %s", value.String())
 							app.close()
 							app.reportError(err)
 						}

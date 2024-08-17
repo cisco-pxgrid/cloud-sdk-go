@@ -61,7 +61,7 @@ func (c *internalConnection) sendPublishMessage(stream string, headers map[strin
 					if rpcErr != nil {
 						pr.Error = rpcErr
 					} else if rpcResult.Status != rpc.ResultStatusSuccess {
-						pr.Error = fmt.Errorf(rpcResult.Status)
+						pr.Error = fmt.Errorf("publish unsuccessful %s", rpcResult.Status)
 					} else {
 						pr.Error = nil
 					}
