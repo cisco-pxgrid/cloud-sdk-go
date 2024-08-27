@@ -25,6 +25,7 @@ type appConfig struct {
 	RegionalFQDNs []string `yaml:"regionalFQDNs"`
 	ReadStream    string   `yaml:"readStream"`
 	WriteStream   string   `yaml:"writeStream"`
+	GroupId       string   `yaml:"groupId"`
 }
 
 type tenantConfig struct {
@@ -114,6 +115,7 @@ func main() {
 		DeviceMessageHandler:      messageHandler,
 		ReadStreamID:              config.App.ReadStream,
 		WriteStreamID:             config.App.WriteStream,
+		GroupID:                   config.App.GroupId,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: *insecure,
