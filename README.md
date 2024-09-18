@@ -4,8 +4,7 @@
 
 # Overview
 
-`cloud-sdk-go` is the Cisco pxGrid Cloud SDK for the Go programming language. This SDK requires a
-minimum version of `Go 1.18`.
+`cloud-sdk-go` is the Cisco pxGrid Cloud SDK for the Go programming language.
 
 The SDK lets you easily create applications for Cisco pxGrid Cloud and consume pxGrid, ERS and
 OpenAPI services from Cisco Identity Services Engine (ISE) devices.
@@ -20,6 +19,11 @@ OpenAPI services from Cisco Identity Services Engine (ISE) devices.
     + pxGrid APIs
     + ERS APIs
     + OpenAPI APIs
+
+## For other languagues
+Currently, there is only SDK for Go.
+For integration with other languages, the HTTP APIs and WebSocket are described here:
+- https://www.postman.com/alei121/cisco-pxgrid-cloud/overview
 
 # Install
 
@@ -51,9 +55,7 @@ func deactivationHandler(device *sdk.Device) {
 
 // messageHandler is invoked when there's a new message received by the app for a device
 func messageHandler(id string, device *sdk.Device, stream string, payload []byte) {
-    fmt.Printf("Received new message (%s) from %s\n", id, device)
-    fmt.Printf("Message stream: %s\n", stream)
-    fmt.Printf("Message payload: %s\n", payload)
+	fmt.Printf("Device message: %s, %s\n", stream, string(p))
 }
 
 // getCredentials is invoked whenever the app needs to retrieve the app credentials
@@ -101,17 +103,12 @@ func main() {
 
 ```go
 tenant, err := app.LinkTenant("otp-obtained-from-cisco-dna-portal")
-if err != nil {
-    fmt.Printf("Failed to obtain tenant information using supplied OTP: %v", err)
-}
 
 // Securely store tenant.ID(), tenant.Name() and tenant.ApiToken()
 
 err = app.UnlinkTenant(tenant)
-if err != nil {
-    fmt.Printf("Failed to unlink %s from %s: %v", tenant, app, err)
-}
 ```
+
 
 ### Setup already linked tenants
 
@@ -119,12 +116,9 @@ If the app needs to be restarted, use the stored tenant info to re-link.
 
 ```go
 tenant, err := app.SetTenant("tenant-id", "tenant-name", "tenant-api-token")
-if err != nil {
-    fmt.Printf("Failed to set tenant: %v", err)
-}
 ```
 
-### Create app instances
+### Create multi-instance app instances
 
 If the app is registered as multi-instance, create and delete app instances can be used.
 
@@ -134,10 +128,13 @@ appInstance, err = app.CreateAppInstance(ac.Name)
 
 // Securely store appInstance.ID(), appInstance.ApiKey()
 
-// appInstance can then be used to LinkTenant
+// appInstance can then be used to link multiple tenants
 tenant, err = appInstance.LinkTenant("otp-obtained-from-cisco-dna-portal")
 
-// When finish, delete app instance with parent app
+// Subsequently, tenants can be unlinked
+appInstance.UnlinkTenant(tenant)
+
+// When finish, delete app instance with parent app.
 app.DeleteAppInstance(appInstance.ID())
 
 ```
@@ -152,12 +149,12 @@ ERS and OpenAPI URLs start with "/ers" and "/api" respectively.
 ```go
 req, _ := http.NewRequest(http.MethodGet, "/ers/config/op/systemconfig/iseversion", nil)
 resp, err := device.Query(req)
-if err != nil {
-    fmt.Printf("Failed to invoke %s on %s: %v", req, device, err)
-}
 ```
 
 ### Invoke pxGrid HTTP API on a device
+
+pxGrid API URLs start with "/pxgrid".
+
 [pxGrid Reference](https://github.com/cisco-pxgrid/pxgrid-rest-ws/wiki)
 
 In order to invoke pxGrid APIs directly on the device, ServiceLookup is not required.
@@ -174,18 +171,18 @@ Instead map the service name to the keyword and append it to the URL along with 
 | com.cisco.ise.config.trustsec    | trustsec             |
 | com.cisco.ise.sxp                | trustsec             |
 | com.cisco.ise.echo               | echo                 |
+| com.cisco.ise.endpoint           | endpoint             |
 
 
 ```go
+
+// getSecurityGroups is an API from com.cisco.cise.config.trustsec service, so trustsec is used in the URL
 req, _ := http.NewRequest(http.MethodPost, "/pxgrid/trustsec/getSecurityGroups", strings.NewReader("{}"))
 resp, err := device.Query(req)
-if err != nil {
-    fmt.Printf("Failed to invoke %s on %s: %v", req, device, err)
-}
 ```
 
 ### Query limitation
-There is currently a limitation on the payload size
+There is a limitation on both request and response body size
 
 | Size  | From ISE versions |
 |-------|-------------------|
@@ -211,6 +208,7 @@ These are the mappings of pxGrid Cloud stream names from pxGrid topic
 | com.cisco.ise.config.trustsec    | securityGroupAclTopic | pxcloud--trustsec-securityGroupAcls |
 | com.cisco.ise.sxp                | bindingTopic          | pxcloud--trustsec-bindings          |
 | com.cisco.ise.echo               | echoTopic             | pxcloud--echo-echo                  |
+| com.cisco.ise.endpoint           | topic                 | pxcloud--endpoint-endpoints         |
 
 
 ## Terminology
@@ -220,3 +218,4 @@ These are the mappings of pxGrid Cloud stream names from pxGrid topic
 Cisco DNA - Cloud services.
 - `Device`: A device represents an on-premise entity (an appliance, a VM, a deployment, a cluster,
   etc.) that is registered with the Cisco DNA - Cloud. Cisco ISE is such an example.
+
