@@ -118,25 +118,24 @@ If the app needs to be restarted, use the stored tenant info to re-link.
 tenant, err := app.SetTenant("tenant-id", "tenant-name", "tenant-api-token")
 ```
 
-### Create multi-instance app instances
+### Create and delete multi-instance app instances
 
 If the app is registered as multi-instance, create and delete app instances can be used.
 
 ```go
 // With the parent app object, create an app instance
 appInstance, err = app.CreateAppInstance(ac.Name)
-
 // Securely store appInstance.ID(), appInstance.ApiKey()
 
 // appInstance can then be used to link multiple tenants
 tenant, err = appInstance.LinkTenant("otp-obtained-from-cisco-dna-portal")
 
-// Subsequently, tenants can be unlinked
+// Prior to deleting app instance,
+// ensure all ISE are deactivated from the app instance.
+// After deactivating all ISE devices, tenants can be unlinked.
 appInstance.UnlinkTenant(tenant)
-
-// When finish, delete app instance with parent app.
+// When all are unlinked, delete app instance with parent app.
 app.DeleteAppInstance(appInstance.ID())
-
 ```
 
 
