@@ -16,7 +16,6 @@ import (
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub"
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 	"github.com/go-resty/resty/v2"
-	"github.com/google/uuid"
 )
 
 const (
@@ -222,7 +221,7 @@ func validateConfig(config *Config) error {
 	}
 
 	if config.GroupID == "" {
-		config.GroupID = uuid.NewString()
+		config.GroupID = "commonGroup"
 	}
 
 	return nil
@@ -381,48 +380,52 @@ func (app *App) controlMsgHandler(id string, payload []byte) error {
 		return fmt.Errorf("failed to unmarshal control payload: %w", err)
 	}
 	log.Logger.Debugf("Received control message: %v", ctrlPayload)
+	tenantId := ctrlPayload.Info.Tenant
+	deviceId := ctrlPayload.Info.Device
 
-	v, ok := app.deviceMap.Load(ctrlPayload.Info.Tenant)
+	v, ok := app.tenantMap.Load(tenantId)
 	if !ok || v == nil {
-		log.Logger.Debugf("Unassociated tenant: %s", ctrlPayload.Info.Tenant)
+		log.Logger.Debugf("Unassociated tenant %s", tenantId)
 		return nil
+	}
+	tenant := v.(*Tenant)
+
+	v, ok = app.deviceMap.Load(tenantId)
+	if !ok || v == nil {
+		return fmt.Errorf("missing device map for tenant %s", tenantId)
 	}
 	deviceMap := v.(*sync.Map)
 
 	if ctrlPayload.Type == msgTypeActivate {
-		v, ok = app.tenantMap.Load(ctrlPayload.Info.Tenant)
-		if !ok || v == nil {
-			return fmt.Errorf("unknown tenant: %s", ctrlPayload.Info.Tenant)
-		}
-		tenant := v.(*Tenant)
-		device, err := tenant.getDeviceByID(ctrlPayload.Info.Device)
+		device, err := tenant.getDeviceByID(deviceId)
 		if err != nil {
-			return fmt.Errorf("failed to get device %s info: %w", ctrlPayload.Info.Device, err)
+			return fmt.Errorf("failed to get device %s info: %w", deviceId, err)
 		}
 		deviceMap.Store(device.ID(), device)
 		if app.config.DeviceActivationHandler != nil {
 			app.config.DeviceActivationHandler(device)
 		}
 	} else if ctrlPayload.Type == msgTypeDeactivate {
-		v, ok = deviceMap.Load(ctrlPayload.Info.Device)
-		if !ok || v == nil {
-			return fmt.Errorf("unknown device: %s", ctrlPayload.Info.Device)
+		var device *Device
+		var err error
+		v, ok = deviceMap.Load(deviceId)
+		if ok {
+			device = v.(*Device)
+			deviceMap.Delete(deviceId)
+		} else {
+			device, err = tenant.getDeviceByID(deviceId)
+			if err != nil {
+				return fmt.Errorf("failed to get device %s info: %w", deviceId, err)
+			}
 		}
-		device := v.(*Device)
-		deviceMap.Delete(device.ID())
 		if app.config.DeviceDeactivationHandler != nil {
 			app.config.DeviceDeactivationHandler(device)
 		}
 	} else if ctrlPayload.Type == msgTypeAppConnect {
 		// Ignore app connect message because app calls LinkTenant explicitly
 	} else if ctrlPayload.Type == msgTypeAppDisconnect {
-		v, ok = app.tenantMap.Load(ctrlPayload.Info.Tenant)
-		if !ok || v == nil {
-			return fmt.Errorf("unknown tenant: %s", ctrlPayload.Info.Tenant)
-		}
-		tenant := v.(*Tenant)
-		app.tenantMap.Delete(tenant.ID())
-		app.deviceMap.Delete(tenant.ID())
+		app.tenantMap.Delete(tenantId)
+		app.deviceMap.Delete(tenantId)
 		if app.config.TenantUnlinkedHandler != nil {
 			app.config.TenantUnlinkedHandler(tenant)
 		}
@@ -433,28 +436,47 @@ func (app *App) controlMsgHandler(id string, payload []byte) error {
 }
 
 func (app *App) dataMsgHandler(id string, headers map[string]string, payload []byte) error {
+	tenantId := headers[tenantKey]
+	deviceId := headers[deviceKey]
+
 	log.Logger.Debugf("Received data message: %s, device: %s, tenant: %s -- %s",
-		headers[msgIDKey], headers[deviceKey], headers[tenantKey], payload)
-	if _, ok := headers[deviceKey]; !ok {
-		return fmt.Errorf("data missing device id")
-	}
-	if _, ok := headers[tenantKey]; !ok {
+		headers[msgIDKey], deviceId, tenantId, payload)
+
+	if tenantId == "" {
 		return fmt.Errorf("data missing tenant id")
 	}
+	if deviceId == "" {
+		return fmt.Errorf("data missing device id")
+	}
 
-	v, ok := app.deviceMap.Load(headers[tenantKey])
+	v, ok := app.tenantMap.Load(tenantId)
 	if !ok || v == nil {
-		log.Logger.Debugf("Unassociated tenant %s", headers[tenantKey])
+		// TODO return nil or error?
+		log.Logger.Debugf("Unassociated tenant %s", tenantId)
 		return nil
+	}
+	tenant := v.(*Tenant)
+
+	v, ok = app.deviceMap.Load(tenantId)
+	if !ok || v == nil {
+		return fmt.Errorf("missing device map for tenant %s", tenantId)
 	}
 	deviceMapInternal := v.(*sync.Map)
 
-	v, ok = deviceMapInternal.Load(headers[deviceKey])
+	var device *Device
+	var err error
+	v, ok = deviceMapInternal.Load(deviceId)
 	if !ok || v == nil {
-		return fmt.Errorf("unknown device: %s", headers[deviceKey])
+		// Consuming partition may change so we may get device we haven't seen before
+		device, err = tenant.getDeviceByID(deviceId)
+		if err != nil {
+			return fmt.Errorf("failed to get device %s info: %w", deviceId, err)
+		}
+		deviceMapInternal.Store(device.ID(), device)
+	} else {
+		device = v.(*Device)
 	}
 
-	device := v.(*Device)
 	if app.config.DeviceMessageHandler != nil {
 		app.config.DeviceMessageHandler(headers[msgIDKey], device, headers["stream"], payload)
 	}
