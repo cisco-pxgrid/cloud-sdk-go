@@ -60,6 +60,7 @@ import (
 	"time"
 
 	rpc "github.com/cisco-pxgrid/cloud-sdk-go/internal/rpc"
+	"github.com/google/uuid"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 	"github.com/cisco-pxgrid/websocket"
@@ -121,6 +122,7 @@ type internalConnection struct {
 	// returned from the channel shall describe the reason of connection closure. A nil value
 	// indicates normal closure.
 	Error      chan error
+	id         string
 	mu         sync.Mutex       // lock to protect the connection itself
 	config     Config           // config received from the user
 	restClient *resty.Client    // resty HTTP client
@@ -162,6 +164,7 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 	}
 	c := &internalConnection{
 		config:      config,
+		id:          uuid.New().String(),
 		restClient:  httpClient,
 		closed:      make(chan struct{}),
 		Error:       make(chan error, 1),        // buffer of 1 to make sure that error is not lost

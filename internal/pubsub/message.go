@@ -12,7 +12,7 @@ import (
 )
 
 func (c *internalConnection) sendOpenMessage() error {
-	req, err := rpc.NewOpenRequest(c.config.GroupID)
+	req, err := rpc.NewOpenRequest(c.id)
 	if err != nil {
 		return err
 	}
@@ -20,7 +20,7 @@ func (c *internalConnection) sendOpenMessage() error {
 }
 
 func (c *internalConnection) sendCloseMessage() error {
-	req, err := rpc.NewCloseRequest(c.config.GroupID)
+	req, err := rpc.NewCloseRequest(c.id)
 	if err != nil {
 		return err
 	}

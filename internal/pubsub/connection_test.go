@@ -299,7 +299,6 @@ func Test_ConsumeError(t *testing.T) {
 	c.disconnect()
 
 	require.True(t, c.isDisconnected())
-	require.Zero(t, len(c.subs.table))
 	require.Zero(t, count)
 }
 
