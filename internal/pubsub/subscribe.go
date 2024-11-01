@@ -6,6 +6,7 @@ package pubsub
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
@@ -26,6 +27,9 @@ import (
 type SubscriptionCallback func(err error, id string, headers map[string]string, payload []byte)
 
 var consumeResponseTimeout = 15 * time.Second
+var resultProcessingTimeout = 60 * time.Second
+var inactivityMessageLogDuration = 10 * time.Minute
+var errConsumeTimeout = errors.New("consume timeout")
 
 // subscribe subscribes to a DxHub Pubsub Stream
 func (c *internalConnection) subscribe(stream string, subscriptionID string, handler SubscriptionCallback) (string, error) {
@@ -95,20 +99,82 @@ func (c *internalConnection) unsubscribeWithoutLock(stream string, deleteSub boo
 	return nil
 }
 
-func (c *internalConnection) sendConsumeMessage(subscriptionId, consumeCtx string) (<-chan *rpc.Response, error) {
-	req, err := rpc.NewConsumeRequest(subscriptionId, consumeCtx)
-	if err != nil {
-		return nil, err
+// consumer send consume request, parse to get the result and put it in the result channel
+// Note that there are implementations here to workaround the cloud's messaging behavior:
+//  1. There is an issue in cloud. After no consume for 90s, the internal connection is dropped but the external websocket connection stays.
+//     This SDK, the external websocket, cannot detect the situation. Sending consume request will not return any further messages.
+//     The workaround here is to return a consume timeout when the result channel is blocked for 60 seconds (resultProcessingTimeout).
+//  2. The cloud's messaging mechanism is Kafka, which is meant for distributed processing. Kafka guarantees at least once delivery.
+//     If messages are not acknowledged, they will be redelivered.
+//     During a callback, if the app takes too long to process, the messages maybe redelivered and gets into an infinite loop.
+//     To avoid this, this "consumer" thread is used to acknowlegde current message by reading the next message.
+//     But this may cause message loss because we are acking the message before the app processes it.
+//     However, since app is treating this as a pubsub system, it will handle the message loss.
+func (c *internalConnection) consumer(sub *subscription, resultCh chan *rpc.ConsumeResult) error {
+	consumeCtx := ""
+	respCh := make(chan *rpc.Response)
+
+	inactivityMessageLogTime := time.Now().Add(inactivityMessageLogDuration)
+
+	for {
+		activity := false
+		req, err := rpc.NewConsumeRequest(sub.id, consumeCtx)
+		if err != nil {
+			return err
+		}
+
+		err = c.sendMessage(req, func(resp *rpc.Response) {
+			select {
+			case respCh <- resp:
+			case <-sub.ctx.Done():
+				log.Logger.Debugf("Consumer stopped for stream %s", sub.stream)
+			}
+		})
+		if err != nil {
+			return err
+		}
+		select {
+		case resp := <-respCh:
+			if resp.Error.Code != 0 {
+				return fmt.Errorf("consume error: %v", resp.Error)
+			}
+
+			res, err := resp.ConsumeResult()
+			if err != nil {
+				return err
+			}
+
+			select {
+			case resultCh <- res:
+				consumeCtx = res.ConsumeContext
+			case <-time.After(resultProcessingTimeout):
+				return errConsumeTimeout
+			}
+
+			if messages, ok := res.Messages[sub.stream]; ok {
+				if len(messages) > 0 {
+					activity = true
+				}
+			}
+		case <-time.After(consumeResponseTimeout):
+			return errConsumeTimeout
+		case <-sub.ctx.Done():
+			return nil
+		}
+		if !activity {
+			if time.Now().After(inactivityMessageLogTime) {
+				log.Logger.Infof("No message for %s for subscription %s", inactivityMessageLogDuration, sub.id)
+				inactivityMessageLogTime = time.Now().Add(inactivityMessageLogDuration)
+			}
+			select {
+			case <-time.After(c.config.PollInterval):
+			case <-sub.ctx.Done():
+				return nil
+			}
+		} else {
+			inactivityMessageLogTime = time.Now().Add(inactivityMessageLogDuration)
+		}
 	}
-	respCh := make(chan *rpc.Response, 1) // we expect 1 response back
-	err = c.sendMessage(req, func(resp *rpc.Response) {
-		respCh <- resp
-		close(respCh)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return respCh, err
 }
 
 type subscription struct {
@@ -120,73 +186,45 @@ type subscription struct {
 	wg        sync.WaitGroup
 }
 
-// subscriber goroutine is spawned for each subscription to a stream
+// subscriber goroutine is spawned for each subscription to a stream.
+// It spawns another consumer goroutine to consume messages from the stream.
+// See "consumer" function for more details on why this is necessary.
 func (c *internalConnection) subscriber(sub *subscription) {
 	defer sub.wg.Done()
 	defer c.wg.Done()
 	log.Logger.Debugf("Starting subscriber thread for %s", sub.stream)
 
-	consumeCtx := ""
-loop:
-	for {
-		activity := false
+	resultCh := make(chan *rpc.ConsumeResult)
+	var err error
+	go func() {
+		err = c.consumer(sub, resultCh)
+		close(resultCh)
+	}()
 
-		// send consume message for requesting data from the server
-		respCh, err := c.sendConsumeMessage(sub.id, consumeCtx)
-		if err != nil {
-			log.Logger.Errorf("Failed to start consumption for stream %s: %v", sub.stream, err)
-			sub.callback(err, "", nil, nil)
-		} else {
-			select {
-			case resp := <-respCh:
-				// received consume response from the processor
-				if resp.Error.Code != 0 {
-					log.Logger.Errorf("Consume error for stream %s: %v", sub.stream, resp.Error)
-					sub.callback(fmt.Errorf("consume error: %v", resp.Error), resp.ID, nil, nil)
-					break
-				}
-				res, err := resp.ConsumeResult()
-				if err != nil {
-					log.Logger.Errorf("Consume error for stream %s: %v", sub.stream, err)
-					sub.callback(fmt.Errorf("consume error: %v", err), resp.ID, nil, nil)
-					break
-				}
-				consumeCtx = res.ConsumeContext
-				for stream, messages := range res.Messages {
-					if stream != sub.stream {
-						log.Logger.Errorf("Received consume message for stream %s, was expecting messages for stream %s", stream, sub.stream)
-						continue
-					}
-					if len(messages) > 0 {
-						activity = true
-					}
-					for _, m := range messages {
-						payload, err := base64.StdEncoding.DecodeString(m.Payload)
-						sub.callback(err, m.MsgID, m.Headers, payload)
-					}
-				}
-			case <-time.After(consumeResponseTimeout):
-				// Consume timeout. Disconnect will trigger reconnect.
-				log.Logger.Warnf("Consume timeout. Disconnecting")
-				c.consumeTimeout = true
-				// This requires a go routine otherwise the waitgroup blocks forever
-				go c.disconnect()
-				break loop
-			case <-sub.ctx.Done():
-				// user unsubscribed from the stream
-				break loop
+	for res := range resultCh {
+		for stream, messages := range res.Messages {
+			if stream != sub.stream {
+				log.Logger.Errorf("Received consume message for stream %s, was expecting messages for stream %s", stream, sub.stream)
+				continue
 			}
-		}
-		// Sleep only if no activity
-		if !activity {
-			select {
-			case <-sub.ctx.Done():
-				// user unsubscribed from the stream
-				break loop
-			case <-time.After(c.config.PollInterval):
+			for _, m := range messages {
+				payload, err := base64.StdEncoding.DecodeString(m.Payload)
+				sub.callback(err, m.MsgID, m.Headers, payload)
 			}
 		}
 	}
+	if err != nil {
+		if err == errConsumeTimeout {
+			log.Logger.Warnf("Consume timeout. Disconnecting")
+			c.consumeTimeout = true
+			// This requires a go routine otherwise the waitgroup blocks forever
+			go c.disconnect()
+		} else {
+			log.Logger.Errorf("Failed to consume messages for stream %s: %v", sub.stream, err)
+			sub.callback(err, "", nil, nil)
+		}
+	}
+
 	log.Logger.Debugf("Stopped subscriber thread for %s", sub.stream)
 }
 
