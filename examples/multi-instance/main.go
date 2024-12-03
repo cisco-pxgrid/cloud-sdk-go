@@ -87,6 +87,7 @@ func main() {
 	configFile := flag.String("config", "", "Configuration yaml file to use (required)")
 	debug := flag.Bool("debug", false, "Enable debug output")
 	insecure := flag.Bool("insecure", false, "Insecure TLS")
+	group := flag.String("group", "", "Group ID")
 	deleteInstance := flag.Bool("delete", false, "Delete app instance")
 	flag.Parse()
 	config, err := loadConfig(*configFile)
@@ -120,6 +121,7 @@ func main() {
 		DeviceMessageHandler:      messageHandler,
 		ReadStreamID:              config.App.ReadStream,
 		WriteStreamID:             config.App.WriteStream,
+		GroupID:                   *group,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: *insecure,
