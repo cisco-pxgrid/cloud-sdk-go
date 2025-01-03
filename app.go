@@ -16,6 +16,7 @@ import (
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub"
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 	"github.com/go-resty/resty/v2"
+	"github.com/rs/xid"
 )
 
 const (
@@ -75,7 +76,7 @@ type Config struct {
 
 	// GroupID defines the group in which this instance of the App belongs to. Instances that belong
 	// in the same group gets messages distributed between them. Instances that belong in separate
-	// groups get a copy of each message. If left empty, unique ID will be used.
+	// groups get a copy of each message. If left empty, unique ID will be created.
 	//
 	// e.g. There are 3 messages on the app's stream - msg1, msg2, msg3
 	//
@@ -221,7 +222,8 @@ func validateConfig(config *Config) error {
 	}
 
 	if config.GroupID == "" {
-		config.GroupID = "commonGroup"
+		// Default to create unique ID so it behaves like pubsub instead of distributed messaging
+		config.GroupID = xid.New().String()
 	}
 
 	return nil
