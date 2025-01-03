@@ -222,7 +222,7 @@ func (c *internalConnection) connect(ctx context.Context) error {
 		}
 		return fmt.Errorf("failed to connect: %v", err)
 	}
-	log.Logger.Infof("Connected to PubSub server: %s", brokerSubURL.String())
+	log.Logger.Infof("Connected to PubSub server. url=%s groupId=%s", brokerSubURL.String(), c.config.GroupID)
 	c.ws.SetReadLimit(maxMessageSize)
 
 	c.wg.Add(1)

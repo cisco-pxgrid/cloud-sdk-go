@@ -51,7 +51,7 @@ func (c *internalConnection) subscribe(stream string, subscriptionID string, han
 		if err != nil {
 			return "", fmt.Errorf("failed to create subscription for %s: %v", stream, err)
 		}
-		log.Logger.Infof("Created subscription ID=%s", id)
+		log.Logger.Infof("Created subscription. id=%s stream=%s", id, stream)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
