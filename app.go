@@ -131,6 +131,9 @@ type App struct {
 
 var (
 	defaultHTTPScheme = "https"
+	maxbackoffFactor  = 3
+	reconnectBackoff  = 30 * time.Second
+	reconnectDelay    = 30 * time.Second
 )
 
 func (app *App) String() string {
@@ -175,6 +178,7 @@ func New(config Config) (*App, error) {
 	}
 
 	app := &App{
+		conn:       make([]*pubsub.Connection, len(config.RegionalFQDNs)),
 		config:     config,
 		httpClient: httpClient,
 		tenantMap:  sync.Map{},
@@ -231,25 +235,10 @@ func validateConfig(config *Config) error {
 
 // Close shuts down the App instance and releases all the resources
 func (app *App) Close() error {
-	if app.conn != nil {
-		for _, connection := range app.conn {
-			connection.Disconnect()
-		}
-		app.conn = nil
-	}
 	app.ctxCancel()
+	app.close()
 	app.wg.Wait()
-
-	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
-		app.tenantMap.Delete(key)
-		return true
-	})
-
-	app.deviceMap.Range(func(key interface{}, _ interface{}) bool {
-		app.deviceMap.Delete(key)
-		return true
-	})
-
+	close(app.Error)
 	return nil
 }
 
@@ -264,11 +253,10 @@ func (app *App) reportError(err error) {
 
 // Close shuts down the App instance and releases all the resources
 func (app *App) close() error {
-	if app.conn != nil {
-		for _, connection := range app.conn {
+	for _, connection := range app.conn {
+		if connection != nil {
 			connection.Disconnect()
 		}
-		app.conn = nil
 	}
 
 	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
@@ -287,7 +275,7 @@ func (app *App) close() error {
 // pubsubConnect opens a websocket connection to pxGrid Cloud
 func (app *App) pubsubConnect() error {
 	var err error
-	for _, fqdn := range app.config.RegionalFQDNs {
+	for i, fqdn := range app.config.RegionalFQDNs {
 
 		connection, connectionErr := pubsub.NewConnection(pubsub.Config{
 			GroupID: app.config.GroupID,
@@ -308,7 +296,7 @@ func (app *App) pubsubConnect() error {
 		if connectionErr != nil {
 			return fmt.Errorf("failed to create pubsub connection: %v", connectionErr)
 		}
-		app.conn = append(app.conn, connection)
+		app.conn[i] = connection
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -528,7 +516,7 @@ func (app *App) LinkTenant(otp string) (*Tenant, error) {
 	}
 
 	if response.IsError() {
-		return nil, errors.New(errorResp.GetError())
+		return nil, fmt.Errorf("failed to redeem OTP. status=%d, error=%s", response.StatusCode(), errorResp.GetError())
 	}
 
 	tenant := &Tenant{
@@ -570,7 +558,7 @@ func (app *App) UnlinkTenant(tenant *Tenant) error {
 	}
 
 	if response.IsError() {
-		return errors.New(errorResp.GetError())
+		return fmt.Errorf("failed to unlink tenant %s. status=%d, error=%s", tenant, response.StatusCode(), errorResp.GetError())
 	}
 
 	return nil
@@ -605,7 +593,8 @@ func (app *App) setTenant(tenant *Tenant) error {
 			Path:   url.PathEscape(regionalFQDN),
 		}
 		regionalHttpClient := resty.NewWithClient(app.httpClient.GetClient()).
-			SetBaseURL(regionalHostURL.String())
+			SetBaseURL(regionalHostURL.String()).
+			SetTLSClientConfig(app.config.Transport.TLSClientConfig)
 		regionalHttpClients[regionalFQDN] = regionalHttpClient
 	}
 	tenant.setRegionalHttpClients(regionalHttpClients)
@@ -659,9 +648,6 @@ func (app *App) startPubsubConnect() {
 		go func() {
 			defer app.wg.Done()
 			backoffFactor := 0
-			maxbackoffFactor := 3
-			reconnectBackoff := 30 * time.Second
-			reconnectDelay := 30 * time.Second
 
 			//loop to call app.connect with a reconnect delay with gradual backoff
 			for {
@@ -676,22 +662,20 @@ func (app *App) startPubsubConnect() {
 					//reset backoff factor for successful connection
 					backoffFactor = 0
 
-					cases := make([]reflect.SelectCase, len(app.conn))
+					cases := make([]reflect.SelectCase, len(app.conn)+1)
 					for i, connection := range app.conn {
 						cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(connection.Error)}
 					}
-					cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(app.ctx.Done())})
-					for {
-						chosen, value, ok := reflect.Select(cases)
-						if !ok {
-							// The chosen channel has been closed, so zero out the channel to disable the case
-							cases[chosen].Chan = reflect.ValueOf(nil)
-							return
-						} else {
-							err = fmt.Errorf("application connection closed: %s", value.String())
-							app.close()
-							app.reportError(err)
-						}
+					cases[len(app.conn)] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(app.ctx.Done())}
+					chosen, value, ok := reflect.Select(cases)
+					if !ok {
+						// The chosen channel has been closed, so zero out the channel to disable the case
+						cases[chosen].Chan = reflect.ValueOf(nil)
+						return
+					} else {
+						err = fmt.Errorf("application connection closed: %s", value.String())
+						app.close()
+						app.reportError(err)
 					}
 				}
 

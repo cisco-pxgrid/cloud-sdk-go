@@ -147,7 +147,8 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 				wg.Add(1)
 				go func(urlNumber int) {
 					defer wg.Done()
-					hresp, err := resty.New().R().
+					hresp, err := resty.New().SetTransport(d.Tenant().app.config.Transport).
+						R().
 						SetBody(b).
 						SetDoNotParseResponse(true).
 						Put(createMultipartEnv.ObjectUrls[urlNumber])

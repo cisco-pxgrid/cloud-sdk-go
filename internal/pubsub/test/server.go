@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 
@@ -14,23 +15,46 @@ import (
 
 	"github.com/cisco-pxgrid/websocket"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/render"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
 type Config struct {
-	PubSubPath        string
-	SubscriptionsPath string
-	RejectConn        bool
-	PublishError      bool
-	ConsumeError      bool
-	ConsumeDrop       bool
+	PubSubPath         string
+	SubscriptionsPath  string
+	PublishError       bool
+	ConsumeError       bool
+	ConnHandler        func() int
+	ConsumeHandler     func(conn *websocket.Conn, req *rpc2.Request) *rpc2.Response
+	QueryHandler       func(w http.ResponseWriter, r *http.Request)
+	QueryStatusHandler func(w http.ResponseWriter, r *http.Request)
 }
 
 type sub struct {
 	stream string
 	id     string
 	params []rpc2.PublishParams
+}
+
+type createMultipartResponse struct {
+	ObjectUrls []string `json:"objectUrls"`
+	QueryID    string   `json:"queryId"`
+}
+
+type getDeviceResponse struct {
+	ID         string `json:"deviceId"`
+	DeviceInfo struct {
+		Kind string `json:"deviceType"`
+		Name string `json:"name"`
+	} `json:"deviceInfo"`
+	MgtInfo struct {
+		Region string `json:"region"`
+		Fqdn   string `json:"fqdn"`
+	} `json:"mgtInfo"`
+	Meta struct {
+		EnrollmentStatus string `json:"enrollmentStatus"`
+	} `json:"meta"`
 }
 
 func (s *sub) String() string {
@@ -41,14 +65,23 @@ var subs = map[string]*sub{}
 var subsMu = sync.Mutex{}
 
 // NewRPCServer creates and starts a test HTTP server that talks RPC
-func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
+func NewRPCServer(t *testing.T, cfg Config) (*httptest.Server, *chi.Mux) {
+	if cfg.PubSubPath == "" {
+		cfg.PubSubPath = "/api/v2/pubsub"
+	}
+	if cfg.SubscriptionsPath == "" {
+		cfg.SubscriptionsPath = "/api/dxhub/v1/registry/subscriptions"
+	}
 	r := chi.NewRouter()
 
 	// pubsub
 	r.Get(cfg.PubSubPath, func(w http.ResponseWriter, r *http.Request) {
-		if cfg.RejectConn {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+		if cfg.ConnHandler != nil {
+			status := cfg.ConnHandler()
+			if status != http.StatusOK {
+				w.WriteHeader(status)
+				return
+			}
 		}
 
 		c, err := websocket.Accept(w, r, nil)
@@ -88,12 +121,12 @@ func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
 					resp = rpc2.NewPublishResponse(req.ID, params[0].MsgID, nil)
 				}
 			case rpc2.MethodConsume:
-				params, _ := req.ConsumeParams()
 				if cfg.ConsumeError {
 					resp = rpc2.NewErrorResponse(req.ID, fmt.Errorf("Consume Error"))
-				} else if cfg.ConsumeDrop {
-					resp = nil
+				} else if cfg.ConsumeHandler != nil {
+					resp = cfg.ConsumeHandler(c, req)
 				} else {
+					params, _ := req.ConsumeParams()
 					subsMu.Lock()
 					for stream, sub := range subs {
 						if sub.id != params.SubscriptionID {
@@ -170,5 +203,74 @@ func NewRPCServer(t *testing.T, cfg Config) *httptest.Server {
 		})
 	})
 
-	return httptest.NewTLSServer(r)
+	// Redeem OTP
+	r.Post("/idm/api/v1/appregistry/otp/redeem", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse := `{
+			"api_token": "token1",
+			"tenant_id": "tenant1",
+			"tenant_name": "TNT000",
+			"assigned_scopes": [
+				"App:Scope:1"
+			],
+			"attributes": {}
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(jsonResponse))
+	})
+
+	// Unlink tenant
+	r.Delete("/idm/api/v1/appregistry/applications/{app_id}/tenants/{tenant_id}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	r.Put("/unittest/objectstore", func(w http.ResponseWriter, r *http.Request) {})
+	r.Get("/unittest/objectstore", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("object1")) })
+
+	r.Post("/api/dxhub/v2/apiproxy/request/{deviceId}/direct/query", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.QueryHandler != nil {
+			cfg.QueryHandler(w, r)
+		}
+	})
+	r.Get("/api/dxhub/v2/apiproxy/request/{deviceId}/direct/query/{queryId}", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.QueryStatusHandler != nil {
+			cfg.QueryStatusHandler(w, r)
+		}
+	})
+	ts := httptest.NewTLSServer(r)
+
+	// More routes that require test server url
+
+	r.Post("/api/dxhub/v2/apiproxy/request/{deviceId}/direct/query/object/multipart", func(w http.ResponseWriter, r *http.Request) {
+		render.JSON(w, r, createMultipartResponse{ObjectUrls: []string{ts.URL + "/unittest/objectstore"}, QueryID: "testqueryid"})
+	})
+
+	// Fetch devices
+	r.Get("/api/uno/v1/registry/devices", func(w http.ResponseWriter, r *http.Request) {
+		u, _ := url.Parse(ts.URL)
+		resp := getDeviceResponse{
+			ID: "dev1",
+			DeviceInfo: struct {
+				Kind string `json:"deviceType"`
+				Name string `json:"name"`
+			}{
+				Kind: "cisco-ise",
+				Name: "sjc-511-1",
+			},
+			MgtInfo: struct {
+				Region string `json:"region"`
+				Fqdn   string `json:"fqdn"`
+			}{
+				Region: "us-west-2",
+				Fqdn:   u.Host,
+			},
+			Meta: struct {
+				EnrollmentStatus string `json:"enrollmentStatus"`
+			}{
+				EnrollmentStatus: "enrolled",
+			},
+		}
+		render.JSON(w, r, []getDeviceResponse{resp})
+		// _, _ = w.Write([]byte(jsonResponse))
+	})
+	return ts, r
 }
