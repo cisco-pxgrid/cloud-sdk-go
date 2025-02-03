@@ -386,7 +386,9 @@ func (c *internalConnection) closeNotify(err error) {
 		c.subs.Unlock()
 
 		c.wg.Wait()
-		c.Error <- err
+		if err != nil {
+			c.Error <- err
+		}
 		close(c.Error)
 	})
 }
@@ -411,18 +413,15 @@ func (c *internalConnection) isClosed() bool {
 func (c *internalConnection) checkWSError(err error) error {
 	closeStatus := websocket.CloseStatus(err)
 	if closeStatus == websocket.StatusNormalClosure || closeStatus == websocket.StatusGoingAway {
-		log.Logger.Infof("PubSub connection closed by server: %v", closeStatus)
-		return nil
+		log.Logger.Warnf("PubSub connection closed by server: %v", closeStatus)
 	} else if closeStatus != -1 {
 		log.Logger.Errorf("PubSub connection failure: %v", closeStatus)
-		return err
 	} else if errors.Is(err, io.EOF) {
-		log.Logger.Infof("PubSub connection closed by server: EOF")
-		return nil
+		log.Logger.Warnf("PubSub connection closed by server: EOF")
 	} else {
 		log.Logger.Errorf("Unexpected PubSub connection failure: %v", err)
-		return err
 	}
+	return err
 }
 
 func (c *internalConnection) read(ctx context.Context) ([]byte, error) {

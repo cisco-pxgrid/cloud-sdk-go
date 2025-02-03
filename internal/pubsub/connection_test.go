@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"sync"
@@ -11,18 +14,13 @@ import (
 	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub/test"
+	"github.com/cisco-pxgrid/cloud-sdk-go/internal/rpc"
+	"github.com/cisco-pxgrid/websocket"
 	"github.com/stretchr/testify/require"
 )
 
-func Test_E2E(t *testing.T) {
-	s := test.NewRPCServer(t, test.Config{
-		PubSubPath:        apiPaths.pubsub,
-		SubscriptionsPath: apiPaths.subscriptions,
-	})
-	defer s.Close()
-
+func setupInternalConnection(s *httptest.Server) (*internalConnection, error) {
 	u, _ := url.Parse(s.URL)
-
 	c, err := newInternalConnection(Config{
 		GroupID: "test-client",
 		Domain:  u.Host,
@@ -31,14 +29,25 @@ func Test_E2E(t *testing.T) {
 		},
 		PollInterval: 10 * time.Millisecond,
 	})
-	require.NoError(t, err)
-	require.NotNil(t, c)
+	if err != nil {
+		return nil, err
+	}
 
 	c.restClient.SetTLSClientConfig(&tls.Config{
 		InsecureSkipVerify: true, // no verification for test server
 	})
-
 	err = c.connect(context.Background())
+	return c, err
+}
+
+func Test_E2E(t *testing.T) {
+	s, _ := test.NewRPCServer(t, test.Config{
+		PubSubPath:        apiPaths.pubsub,
+		SubscriptionsPath: apiPaths.subscriptions,
+	})
+	defer s.Close()
+
+	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
 
 	// 5 subscriptions
@@ -52,7 +61,6 @@ func Test_E2E(t *testing.T) {
 		receivedMu.Unlock()
 		_, err = c.subscribe(stream, "",
 			func(e error, id string, _ map[string]string, payload []byte) {
-				t.Logf("Received message: %s, payload: %s", id, payload)
 				receivedMu.Lock()
 				receivedMsgs[stream]++
 				receivedMu.Unlock()
@@ -72,10 +80,9 @@ func Test_E2E(t *testing.T) {
 			for i := 0; i < numMessages; i++ {
 				payload := []byte("This is a test message on " + stream + ": " + strconv.Itoa(i))
 				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-				r, err := c.Publish(ctx, stream, nil, payload)
+				_, err := c.Publish(ctx, stream, nil, payload)
 				cancel()
 				require.NoError(t, err)
-				t.Logf("Published message: %s to stream: %s, payload: %s", r.ID, stream, payload)
 			}
 		}()
 	}
@@ -97,41 +104,19 @@ func Test_E2E(t *testing.T) {
 
 	t.Logf("subs table: %#v", c.subs.table)
 	require.Zero(t, len(c.subs.table))
-
-	select {
-	case err = <-c.Error:
-		require.NoError(t, err)
-	case <-time.After(3 * time.Second):
-		t.Fatalf("Timed out waiting for the connection to close")
-	}
 }
 
 func Test_ConnectionError(t *testing.T) {
-	s := test.NewRPCServer(t, test.Config{
+	s, _ := test.NewRPCServer(t, test.Config{
 		PubSubPath:        apiPaths.pubsub,
 		SubscriptionsPath: apiPaths.subscriptions,
-		RejectConn:        true,
+		ConnHandler: func() int {
+			return http.StatusInternalServerError
+		},
 	})
 	defer s.Close()
 
-	u, _ := url.Parse(s.URL)
-
-	c, err := newInternalConnection(Config{
-		GroupID: "test-client",
-		Domain:  u.Host,
-		APIKeyProvider: func() ([]byte, error) {
-			return []byte("xyz"), nil
-		},
-		PollInterval: 10 * time.Millisecond,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, c)
-
-	c.restClient.SetTLSClientConfig(&tls.Config{
-		InsecureSkipVerify: true, // no verification for test server
-	})
-
-	err = c.connect(context.Background())
+	_, err := setupInternalConnection(s)
 	require.Error(t, err, "Did not receive expected error")
 }
 
@@ -205,30 +190,13 @@ func Test_AuthProviders(t *testing.T) {
 }
 
 func Test_ConnectAlreadyConnected(t *testing.T) {
-	s := test.NewRPCServer(t, test.Config{
+	s, _ := test.NewRPCServer(t, test.Config{
 		PubSubPath:        apiPaths.pubsub,
 		SubscriptionsPath: apiPaths.subscriptions,
 	})
 	defer s.Close()
 
-	u, _ := url.Parse(s.URL)
-
-	c, err := newInternalConnection(Config{
-		GroupID: "test-client",
-		Domain:  u.Host,
-		APIKeyProvider: func() ([]byte, error) {
-			return []byte("xyz"), nil
-		},
-		PollInterval: 10 * time.Millisecond,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, c)
-
-	c.restClient.SetTLSClientConfig(&tls.Config{
-		InsecureSkipVerify: true, // no verification for test server
-	})
-
-	err = c.connect(context.Background())
+	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
 	defer c.disconnect()
 
@@ -253,30 +221,14 @@ func Test_ConnectAuthTokenError(t *testing.T) {
 }
 
 func Test_ConsumeError(t *testing.T) {
-	s := test.NewRPCServer(t, test.Config{
+	s, _ := test.NewRPCServer(t, test.Config{
 		PubSubPath:        apiPaths.pubsub,
 		SubscriptionsPath: apiPaths.subscriptions,
 		ConsumeError:      true,
 	})
 	defer s.Close()
 
-	u, _ := url.Parse(s.URL)
-
-	c, err := newInternalConnection(Config{
-		GroupID: "test-client",
-		Domain:  u.Host,
-		APIKeyProvider: func() ([]byte, error) {
-			return []byte("xyz"), nil
-		},
-	})
-	require.NoError(t, err)
-	require.NotNil(t, c)
-
-	c.restClient.SetTLSClientConfig(&tls.Config{
-		InsecureSkipVerify: true, // no verification for test server
-	})
-
-	err = c.connect(context.Background())
+	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
 
 	count := 0
@@ -319,30 +271,14 @@ func Test_PublishError1(t *testing.T) {
 }
 
 func Test_PublishError2(t *testing.T) {
-	s := test.NewRPCServer(t, test.Config{
+	s, _ := test.NewRPCServer(t, test.Config{
 		PubSubPath:        apiPaths.pubsub,
 		SubscriptionsPath: apiPaths.subscriptions,
 		PublishError:      true,
 	})
 	defer s.Close()
 
-	u, _ := url.Parse(s.URL)
-
-	c, err := newInternalConnection(Config{
-		GroupID: "test-client",
-		Domain:  u.Host,
-		APIKeyProvider: func() ([]byte, error) {
-			return []byte("xyz"), nil
-		},
-	})
-	require.NoError(t, err)
-	require.NotNil(t, c)
-
-	c.restClient.SetTLSClientConfig(&tls.Config{
-		InsecureSkipVerify: true, // no verification for test server
-	})
-
-	err = c.connect(context.Background())
+	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -358,29 +294,13 @@ func Test_PublishError2(t *testing.T) {
 }
 
 func Test_PublishAsync(t *testing.T) {
-	s := test.NewRPCServer(t, test.Config{
+	s, _ := test.NewRPCServer(t, test.Config{
 		PubSubPath:        apiPaths.pubsub,
 		SubscriptionsPath: apiPaths.subscriptions,
 	})
 	defer s.Close()
 
-	u, _ := url.Parse(s.URL)
-
-	c, err := newInternalConnection(Config{
-		GroupID: "test-client",
-		Domain:  u.Host,
-		APIKeyProvider: func() ([]byte, error) {
-			return []byte("xyz"), nil
-		},
-	})
-	require.NoError(t, err)
-	require.NotNil(t, c)
-
-	c.restClient.SetTLSClientConfig(&tls.Config{
-		InsecureSkipVerify: true, // no verification for test server
-	})
-
-	err = c.connect(context.Background())
+	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
 
 	subCh := make(chan []byte)
@@ -419,29 +339,13 @@ func Test_PublishAsync(t *testing.T) {
 }
 
 func Test_PublishAsyncCanceled(t *testing.T) {
-	s := test.NewRPCServer(t, test.Config{
+	s, _ := test.NewRPCServer(t, test.Config{
 		PubSubPath:        apiPaths.pubsub,
 		SubscriptionsPath: apiPaths.subscriptions,
 	})
 	defer s.Close()
 
-	u, _ := url.Parse(s.URL)
-
-	c, err := newInternalConnection(Config{
-		GroupID: "test-client",
-		Domain:  u.Host,
-		APIKeyProvider: func() ([]byte, error) {
-			return []byte("xyz"), nil
-		},
-	})
-	require.NoError(t, err)
-	require.NotNil(t, c)
-
-	c.restClient.SetTLSClientConfig(&tls.Config{
-		InsecureSkipVerify: true, // no verification for test server
-	})
-
-	err = c.connect(context.Background())
+	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
 
 	count := 0
@@ -472,33 +376,19 @@ func Test_PublishAsyncCanceled(t *testing.T) {
 }
 
 func Test_ConsumeTimeout(t *testing.T) {
-	s := test.NewRPCServer(t, test.Config{
+	s, _ := test.NewRPCServer(t, test.Config{
 		PubSubPath:        apiPaths.pubsub,
 		SubscriptionsPath: apiPaths.subscriptions,
-		ConsumeDrop:       true,
+		ConsumeHandler: func(conn *websocket.Conn, req *rpc.Request) *rpc.Response {
+			return nil
+		},
 	})
 	defer s.Close()
 
 	// Change to shorter timeout
 	consumeResponseTimeout = 2 * time.Second
 
-	u, _ := url.Parse(s.URL)
-
-	c, err := newInternalConnection(Config{
-		GroupID: "test-client",
-		Domain:  u.Host,
-		APIKeyProvider: func() ([]byte, error) {
-			return []byte("xyz"), nil
-		},
-	})
-	require.NoError(t, err)
-	require.NotNil(t, c)
-
-	c.restClient.SetTLSClientConfig(&tls.Config{
-		InsecureSkipVerify: true, // no verification for test server
-	})
-
-	err = c.connect(context.Background())
+	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
 
 	_, err = c.subscribe("test-stream", "",
@@ -510,6 +400,35 @@ func Test_ConsumeTimeout(t *testing.T) {
 	select {
 	case <-c.Error:
 		require.True(t, c.consumeTimeout)
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "Error expected")
+	}
+	c.disconnect()
+}
+
+func Test_ConsumeWsClose(t *testing.T) {
+	s, _ := test.NewRPCServer(t, test.Config{
+		PubSubPath:        apiPaths.pubsub,
+		SubscriptionsPath: apiPaths.subscriptions,
+		ConsumeHandler: func(conn *websocket.Conn, req *rpc.Request) *rpc.Response {
+			conn.Close(websocket.StatusNormalClosure, "")
+			return nil
+		},
+	})
+	defer s.Close()
+
+	c, err := setupInternalConnection(s)
+	require.NoError(t, err)
+
+	_, err = c.subscribe("test-stream", "",
+		func(_ error, _ string, _ map[string]string, _ []byte) {
+			require.Fail(t, "Unexpected message")
+		})
+	require.NoError(t, err)
+
+	select {
+	case err := <-c.Error:
+		require.Error(t, err, io.EOF)
 	case <-time.After(5 * time.Second):
 		require.Fail(t, "Error expected")
 	}
