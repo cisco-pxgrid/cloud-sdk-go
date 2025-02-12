@@ -130,6 +130,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer app.Close()
 	logger.Debugf("App config: %+v", appConfig)
 
 	var tc = &config.Tenant
@@ -160,13 +161,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	select {
-	case <-ctx.Done():
-		logger.Infof("Terminating...")
-	case err := <-app.Error:
-		logger.Errorf("App error: %v", err)
-	}
-	if err = app.Close(); err != nil {
-		panic(err)
+	for {
+		select {
+		case err := <-app.Error:
+			logger.Errorf("App error: %v", err)
+		case <-ctx.Done():
+			logger.Infof("Terminating...")
+			return
+		}
 	}
 }

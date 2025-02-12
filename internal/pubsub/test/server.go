@@ -248,13 +248,13 @@ func NewRPCServer(t *testing.T, cfg Config) (*httptest.Server, *chi.Mux) {
 	r.Get("/api/uno/v1/registry/devices", func(w http.ResponseWriter, r *http.Request) {
 		u, _ := url.Parse(ts.URL)
 		resp := getDeviceResponse{
-			ID: "dev1",
+			ID: "device1",
 			DeviceInfo: struct {
 				Kind string `json:"deviceType"`
 				Name string `json:"name"`
 			}{
 				Kind: "cisco-ise",
-				Name: "sjc-511-1",
+				Name: "device1",
 			},
 			MgtInfo: struct {
 				Region string `json:"region"`
