@@ -251,23 +251,13 @@ func (app *App) reportError(err error) {
 	}
 }
 
-// Close shuts down the App instance and releases all the resources
+// close closes the connections. Reconnection can also call this function
 func (app *App) close() error {
 	for _, connection := range app.conn {
 		if connection != nil {
 			connection.Disconnect()
 		}
 	}
-
-	app.tenantMap.Range(func(key interface{}, _ interface{}) bool {
-		app.tenantMap.Delete(key)
-		return true
-	})
-
-	app.deviceMap.Range(func(key interface{}, _ interface{}) bool {
-		app.deviceMap.Delete(key)
-		return true
-	})
 
 	return nil
 }
@@ -649,13 +639,13 @@ func (app *App) startPubsubConnect() {
 			defer app.wg.Done()
 			backoffFactor := 0
 
-			//loop to call app.connect with a reconnect delay with gradual backoff
+			// loop to call app.connect with a reconnect delay with gradual backoff
 			for {
 				err := app.pubsubConnect()
 				if err != nil {
 					log.Logger.Errorf("Failed to connect the app: %v", err)
-					app.close()
 					app.reportError(err)
+					app.close()
 				} else {
 					//obtain the device list
 					app.loadTenantsDevices()
@@ -667,15 +657,19 @@ func (app *App) startPubsubConnect() {
 						cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(connection.Error)}
 					}
 					cases[len(app.conn)] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(app.ctx.Done())}
-					chosen, value, ok := reflect.Select(cases)
+					_, value, ok := reflect.Select(cases)
 					if !ok {
-						// The chosen channel has been closed, so zero out the channel to disable the case
-						cases[chosen].Chan = reflect.ValueOf(nil)
+						// connection error channel never closes
+						// so this is a ctx done. That means app.Close() was called
+						// Simple exit the loop
 						return
 					} else {
-						err = fmt.Errorf("application connection closed: %s", value.String())
+						// ctx channel only closes, so this is a connection error
+						if err, ok := value.Interface().(error); ok {
+							log.Logger.Errorf("unexpected connection closed. will reconnect: %v", err)
+							app.reportError(err)
+						}
 						app.close()
-						app.reportError(err)
 					}
 				}
 
