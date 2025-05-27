@@ -135,6 +135,7 @@ func (app *App) newAppConfig(appID, appApiKey string) Config {
 		ID:                        appID,
 		GlobalFQDN:                app.config.GlobalFQDN,
 		RegionalFQDN:              app.config.RegionalFQDN,
+		RegionalFQDNs:             app.config.RegionalFQDNs,
 		ReadStreamID:              "app--" + appID + "-R",
 		WriteStreamID:             "app--" + appID + "-W",
 		GroupID:                   app.config.GroupID,
