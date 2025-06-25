@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -50,6 +51,7 @@ var (
 	PartSize          = 50 * 1024 * 1024
 	StatusPollTimeMin = 500 * time.Millisecond
 	StatusPollTimeMax = 15 * time.Second
+	CloseTimeout      = 15 * time.Second
 )
 
 const (
@@ -62,6 +64,7 @@ const (
 // Underlying direct mode with API-Proxy
 // Context, URL, headers, body...etc can be set within request
 func (d *Device) Query(request *http.Request) (*http.Response, error) {
+	ctx := request.Context()
 	reqEnv := envelop{
 		Method:  request.Method,
 		Url:     request.URL.String(),
@@ -90,6 +93,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		}
 
 		resp, err := regionalClient.R().
+			SetContext(ctx).
 			SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
 			SetResult(&createMultipartEnv).
 			Post(queryPath)
@@ -106,6 +110,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 			}
 
 			resp, err = regionalClient.R().
+				SetContext(ctx).
 				SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
 				SetResult(&createEnv).
 				Post(queryPath)
@@ -149,6 +154,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 					defer wg.Done()
 					hresp, err := resty.New().SetTransport(d.Tenant().app.config.Transport).
 						R().
+						SetContext(ctx).
 						SetBody(b).
 						SetDoNotParseResponse(true).
 						Put(createMultipartEnv.ObjectUrls[urlNumber])
@@ -181,6 +187,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 			}
 			reader = bytes.NewReader(b)
 			hresp, err := resty.New().R().
+				SetContext(ctx).
 				SetBody(reader).
 				SetDoNotParseResponse(true).
 				Put(createEnv.ObjectUrl)
@@ -207,6 +214,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 	}
 
 	resp, err := regionalClient.R().
+		SetContext(ctx).
 		SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
 		SetBody(reqEnv).
 		SetResult(&respEnv).
@@ -243,6 +251,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		}
 
 		resp, err = regionalClient.R().
+			SetContext(ctx).
 			SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync").
 			SetBody(respEnv).
 			SetResult(&respEnv).
@@ -272,6 +281,7 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 		}
 
 		hresp, err := regionalClient.R().
+			SetContext(ctx).
 			SetDoNotParseResponse(true).
 			Get(respEnv.ObjectUrl)
 		if err != nil {
@@ -300,12 +310,13 @@ func (d *Device) Query(request *http.Request) (*http.Response, error) {
 }
 
 func (d *Device) fallbackQuery(request *http.Request, payload []byte) (*http.Response, error) {
+	ctx := request.Context()
 	queryPath := fmt.Sprintf(directModePath, url.PathEscape(d.ID()), request.URL)
 	regionalClient := d.tenant.regionalHttpClients[d.Fqdn()]
 	if regionalClient == nil {
 		return nil, fmt.Errorf("%s - %s", clientRegionError, d.Fqdn())
 	}
-	req := regionalClient.R()
+	req := regionalClient.R().SetContext(ctx)
 
 	if request.Header != nil {
 		for name, values := range request.Header {
@@ -343,6 +354,8 @@ func (q *queryCloser) Close() error {
 	queryPath := fmt.Sprintf(directModePath, url.PathEscape(q.device.ID()), "/query/"+q.queryId)
 	req := q.device.tenant.regionalHttpClients[q.device.Fqdn()].R()
 	req.SetHeader(X_API_PROXY_COMMUNICATION_SYTLE, "sync")
-	_, err := req.Execute(http.MethodDelete, queryPath)
+	ctx, cancel := context.WithTimeout(context.Background(), CloseTimeout)
+	defer cancel()
+	_, err := req.SetContext(ctx).Execute(http.MethodDelete, queryPath)
 	return err
 }
