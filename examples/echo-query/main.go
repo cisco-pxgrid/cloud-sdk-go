@@ -5,8 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 	"gopkg.in/yaml.v2"
@@ -104,6 +106,21 @@ func main() {
 			ApiKey: []byte(config.App.ApiKey),
 		}, nil
 	}
+	d := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	t := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           d.DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: *insecure,
+		},
+	}
 	appConfig := sdk.Config{
 		ID:                        config.App.Id,
 		GetCredentials:            getCredentials,
@@ -115,12 +132,7 @@ func main() {
 		DeviceMessageHandler:      messageHandler,
 		ReadStreamID:              config.App.ReadStream,
 		WriteStreamID:             config.App.WriteStream,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: *insecure,
-			},
-			Proxy: http.ProxyFromEnvironment,
-		},
+		Transport:                 t,
 	}
 	// SDK App create
 	app, err := sdk.New(appConfig)
