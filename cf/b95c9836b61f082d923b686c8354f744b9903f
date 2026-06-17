@@ -1,0 +1,38 @@
+device.go
+  s_f3b80c08d98ec4::t_072346fd0d9fc7 9-10,86-87,89-91,97-98,105
+tenant.go
+  s_f3b80c08d98ec4::t_2bbafa5b602eb2 12,53-66,70-112,117,119-120,125,127-129,135-136,152-156,165,175-179,189,191-192,194,197,199-201,207-208,212,220-223,312,314-316,321-322,336
+  h_18a637ae2a5e9c 7,124,196,260-310,313,317-320,323-335,337-339
+  s_f3b80c08d98ec4::t_9d914e40851ada 16-19,67-69,118,121,123,190,193,195,311
+  s_f3b80c08d98ec4::t_6479b0503ea7a3 20,122
+tenant_test.go
+  h_18a637ae2a5e9c 191-197,201-204,208-240,242
+app.go
+  s_f3b80c08d98ec4::t_072346fd0d9fc7 607,619,632-633,636,649
+  s_f3b80c08d98ec4::t_9d914e40851ada 151-153,161
+  s_f3b80c08d98ec4::t_39727e81a51540 154-160,162-163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "cfb95c9836b61f082d923b686c8354f744b9903f",
+  "prompts": {},
+  "humans": {
+    "h_18a637ae2a5e9c": {
+      "author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco)"
+    },
+    "h_28c5b11db43a13": {
+      "author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  },
+  "sessions": {
+    "s_f3b80c08d98ec4": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "69bd0244-70c7-4e08-8c55-9b37767e3c70",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  }
+}
