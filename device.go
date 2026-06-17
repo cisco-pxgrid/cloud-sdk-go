@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+
+	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 )
 
 // Device represents an ISE deployment that's registered with pxGrid Cloud
@@ -81,21 +83,26 @@ func (d *Device) Status() (*DeviceStatus, error) {
 	var device getDeviceResponse
 	var errorResp errorResponse
 
-	response, err := d.tenant.httpClient.R().
+	log.Logger.Debugf("Device.Status: enter device.id=%s path=%s", d.id, queryPath)
+	req := d.tenant.httpClient.R().
 		SetResult(&device).
-		SetError(&errorResp).
-		Get(queryPath)
+		SetError(&errorResp)
+	response, err := req.Get(queryPath)
+	logHTTPCall("Device.Status", req, response, err)
 	if err != nil {
 		return nil, err
 	}
 
 	if response.IsError() {
+		log.Logger.Debugf("Device.Status: device.id=%s platform error status=%d body=%s",
+			d.id, response.StatusCode(), truncate(response.Body(), httpDebugBodyMax))
 		return nil, errors.New(errorResp.GetError())
 	}
 
 	resp := &DeviceStatus{
 		Status: device.Meta.EnrollmentStatus,
 	}
+	log.Logger.Debugf("Device.Status: device.id=%s status=%s", d.id, resp.Status)
 
 	return resp, err
 }

@@ -148,6 +148,19 @@ func New(config Config) (*App, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	// Triage build: log the App API key on startup. DO NOT SHIP TO PRODUCTION.
+	log.Logger.Warnf("cloud-sdk-go triage build: raw API keys and tenant tokens will appear in DEBUG output. DO NOT USE IN PRODUCTION.")
+	{
+		appKey := config.ApiKey
+		if config.GetCredentials != nil {
+			if creds, err := config.GetCredentials(); err == nil && creds != nil {
+				appKey = string(creds.ApiKey)
+				zeroByteArray(creds.ApiKey)
+			}
+		}
+		log.Logger.Debugf("App.New: id=%s globalFQDN=%s apiKey=%s [RAW CREDENTIALS IN LOG]", config.ID, config.GlobalFQDN, appKey)
+	}
+
 	hostURL := url.URL{
 		Scheme: defaultHTTPScheme,
 		Path:   url.PathEscape(config.GlobalFQDN),
@@ -591,6 +604,7 @@ func (app *App) setTenant(tenant *Tenant) error {
 
 	tenant.app = app
 
+	log.Logger.Debugf("App.LinkTenant/SetTenant: tenant.id=%s tenant.name=%q — fetching device list from platform to populate local cache", tenant.id, tenant.name)
 	devices, err := tenant.getDevices()
 	if err != nil {
 		return fmt.Errorf("failed to fetch devices for %s: %v", tenant, err)
@@ -602,6 +616,7 @@ func (app *App) setTenant(tenant *Tenant) error {
 		deviceMapInternal.Store(device.id, device)
 	}
 	app.deviceMap.Store(tenant.id, &deviceMapInternal)
+	log.Logger.Debugf("App.LinkTenant/SetTenant: tenant.id=%s cache populated count=%d", tenant.id, len(devices))
 
 	// Once a tenant is added, we can start pubsub
 	app.startPubsubConnect()
@@ -614,8 +629,11 @@ func (app *App) loadTenantsDevices() {
 		if !ok || tenant == nil {
 			return false
 		}
+		tID := tenant.(*Tenant).id
+		log.Logger.Debugf("App.loadTenantsDevices: refreshing tenant.id=%s from platform", tID)
 		devices, err := tenant.(*Tenant).getDevices()
 		if err != nil {
+			log.Logger.Debugf("App.loadTenantsDevices: tenant.id=%s getDevices failed err=%v — skipping", tID, err)
 			return false
 		}
 		deviceMapInternal := sync.Map{}
@@ -628,6 +646,7 @@ func (app *App) loadTenantsDevices() {
 			}
 		}
 		app.deviceMap.Store(tenant.(*Tenant).id, &deviceMapInternal)
+		log.Logger.Debugf("App.loadTenantsDevices: tenant.id=%s cache refreshed count=%d", tID, len(devices))
 		return true
 	})
 }

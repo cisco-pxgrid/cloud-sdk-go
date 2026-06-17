@@ -188,6 +188,58 @@ func (suite *TenantTestSuite) TestGetDeviceByID() {
 	suite.EqualValues(&device2, device)
 }
 
+func (suite *TenantTestSuite) TestGetDevicesForTenant() {
+	jsonResponse := `[
+		{
+			"deviceId": "60936aa803877a672056da7b",
+			"deviceInfo": {
+				"deviceType": "cisco-ise",
+				"name": "sjc-511-1"
+			},
+			"mgtInfo": {
+				"region": "us-west-2",
+				"fqdn": "int-mm.tesseractinternal.com"
+			},
+			"meta": {
+				"enrollmentStatus": "enrolled"
+			}
+		}
+	]`
+
+	expected := []DeviceInfo{
+		{
+			ID:     "60936aa803877a672056da7b",
+			Name:   "sjc-511-1",
+			Region: "us-west-2",
+			Fqdn:   "int-mm.tesseractinternal.com",
+			Status: "enrolled",
+		},
+	}
+
+	mockTransport := httpmock.NewMockTransport()
+	mockTransport.RegisterResponder(
+		http.MethodGet,
+		"https://test.com"+getDevicesPath,
+		func(req *http.Request) (*http.Response, error) {
+			suite.Equal("test-token", req.Header.Get("X-API-KEY"))
+			resp := httpmock.NewStringResponse(http.StatusOK, jsonResponse)
+			resp.Header.Set("Content-Type", "application/json")
+			return resp, nil
+		})
+
+	devices, err := GetDevicesForTenant("test.com", "test-token", mockTransport)
+	suite.NoError(err)
+	suite.EqualValues(expected, devices)
+}
+
+func (suite *TenantTestSuite) TestGetDevicesForTenant_EmptyInputs() {
+	_, err := GetDevicesForTenant("", "token", nil)
+	suite.EqualError(err, "globalFQDN must not be empty")
+
+	_, err = GetDevicesForTenant("test.com", "", nil)
+	suite.EqualError(err, "tenantAPIToken must not be empty")
+}
+
 func TestTenantTestSuite(t *testing.T) {
 	suite.Run(t, new(TenantTestSuite))
 }
