@@ -1,0 +1,47 @@
+docs/read-stream-diagnostics-usage.md
+  s_95c5ed48da9ea8::t_73586bbaa09eaf 1-69
+app.go
+  s_95c5ed48da9ea8::t_57c7360c45fe8f 203-204
+  s_95c5ed48da9ea8::t_1756bda37030b1 112-123,298-301,339-346,355-359
+internal/pubsub/connection.go
+  s_95c5ed48da9ea8::t_1756bda37030b1 76-85,122-133,135-227,272-280,347
+internal/pubsub/reconnect.go
+  s_95c5ed48da9ea8::t_72599d4dfdbb16 41-46
+  s_95c5ed48da9ea8::t_9d75e691c54312 71
+  s_95c5ed48da9ea8::t_e47e15b3a13350 32-40
+  s_95c5ed48da9ea8::t_6fd85bc77a30e3 139-140,151,157-158,160-206
+internal/pubsub/subscribe.go
+  s_95c5ed48da9ea8::t_a658f96adb2826 67-69,214-221,227-228
+examples/multi-instance/main.go
+  s_95c5ed48da9ea8::t_b9e191511ebd2f 157-159
+  s_95c5ed48da9ea8::t_2c3ad249da0da5 210-212
+internal/pubsub/connstats_test.go
+  s_95c5ed48da9ea8::t_f942c08e7b16c5 7,29,34,39,44
+  s_95c5ed48da9ea8::t_4b3a3f61f41709 1-6,8-28,30-33,35-38,40-43,45-191
+appinstance.go
+  s_95c5ed48da9ea8::t_e66b0bb6895734 148-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.8",
+  "base_commit_sha": "22cdd6d674f2fc99b8cbf41d468d8dffb3a3d7ab",
+  "prompts": {},
+  "humans": {
+    "h_18a637ae2a5e9c": {
+      "author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco)"
+    },
+    "h_28c5b11db43a13": {
+      "author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  },
+  "sessions": {
+    "s_95c5ed48da9ea8": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "d955b60b-418d-40db-bb29-5a5ccf9814c0",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  }
+}
