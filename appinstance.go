@@ -145,6 +145,9 @@ func (app *App) newAppConfig(appID, appApiKey string) Config {
 		DeviceDeactivationHandler: app.config.DeviceDeactivationHandler,
 		TenantUnlinkedHandler:     app.config.TenantUnlinkedHandler,
 		DeviceMessageHandler:      app.config.DeviceMessageHandler,
+		StatusLogInterval:         app.config.StatusLogInterval,
+		LogEachMessage:            app.config.LogEachMessage,
+		MessageGapThreshold:       app.config.MessageGapThreshold,
 	}
 }
 

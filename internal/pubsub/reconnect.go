@@ -29,6 +29,21 @@ type subscriptionParams struct {
 
 // NewConnection creates a new connection object based on the supplied configuration.
 func NewConnection(config Config) (*Connection, error) {
+	// Apply diagnostic defaults here so that Connection-level goroutines (statusLogger) read the
+	// resolved values. newInternalConnection applies the same defaults to its own copy, but the
+	// Connection keeps this config for status/gap logging.
+	if config.StatusLogInterval == 0 {
+		config.StatusLogInterval = defaultStatusLogInterval
+	}
+	if config.MessageGapThreshold == 0 {
+		config.MessageGapThreshold = defaultMessageGapThreshold
+	}
+	// Create the shared diagnostic stats up-front and keep it in c.config so that every
+	// internalConnection built from this config (including reconnects) shares the same
+	// counters and last-message timestamps.
+	if config.stats == nil {
+		config.stats = newConnStats()
+	}
 	conn, err := newInternalConnection(config)
 	if err != nil {
 		return nil, err
@@ -53,6 +68,7 @@ func (c *Connection) Connect(connectCtx context.Context) error {
 	}
 	c.ctx, c.ctxCancel = context.WithCancel(context.Background())
 	go c.errorHandler()
+	go c.statusLogger()
 	return nil
 }
 
@@ -120,7 +136,8 @@ func (c *Connection) errorHandler() {
 			if !c.conn.consumeTimeout {
 				return
 			}
-			log.Logger.Warnf("Consume timeout. Reconnecting")
+			reconnectStart := time.Now()
+			log.Logger.Warnf("Consume timeout. Reconnecting. region=%s groupId=%s", c.config.Domain, c.config.GroupID)
 			// Create new connection and subscribe with existing subscription ID
 			c.conn, err = newInternalConnection(c.config)
 			if err != nil {
@@ -131,12 +148,62 @@ func (c *Connection) errorHandler() {
 			if err = c.conn.connect(ctx); err != nil {
 				return
 			}
+			log.Logger.Infof("Reconnected to PubSub server. region=%s groupId=%s", c.config.Domain, c.config.GroupID)
 			for _, sub := range c.subscriptions {
 				_, err = c.conn.subscribe(sub.stream, sub.subscriptionID, sub.handler)
 				if err != nil {
 					return
 				}
+				log.Logger.Infof("Resubscribed after reconnect. region=%s stream=%s subID=%s",
+					c.config.Domain, sub.stream, sub.subscriptionID)
 			}
+			c.config.stats.recordReconnect()
+			log.Logger.Infof("Reconnect complete. region=%s groupId=%s streams=%d durationMs=%d reconnectCount=%d",
+				c.config.Domain, c.config.GroupID, len(c.subscriptions),
+				time.Since(reconnectStart).Milliseconds(), c.config.stats.reconnectSnapshot())
+		case <-c.ctx.Done():
+			return
+		}
+	}
+}
+
+// statusLogger periodically logs the read-stream connection status, a per-stream summary
+// of messages received during the interval, and a WARN for any subscribed stream that has
+// received no messages beyond MessageGapThreshold while the connection is up.
+func (c *Connection) statusLogger() {
+	interval := c.config.StatusLogInterval
+	if interval <= 0 {
+		interval = defaultStatusLogInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			disconnected := c.IsDisconnected()
+			connectedSince, reconnects, sinceLast, counts := c.config.stats.snapshotAndReset()
+
+			// Build a stable list of subscribed streams with their subscription IDs.
+			var streams string
+			for stream, sub := range c.subscriptions {
+				received := counts[stream]
+				log.Logger.Infof("Read-stream summary. region=%s stream=%s subID=%s received=%d intervalSec=%d disconnected=%t",
+					c.config.Domain, stream, sub.subscriptionID, received, int(interval.Seconds()), disconnected)
+				streams += stream + " "
+
+				// Gap detection: connection is up but no messages for longer than the threshold.
+				if !disconnected {
+					if gap, ok := sinceLast[stream]; ok && gap > c.config.MessageGapThreshold {
+						log.Logger.Warnf("Read-stream gap detected. region=%s stream=%s subID=%s noMessagesForSec=%d thresholdSec=%d (connection up)",
+							c.config.Domain, stream, sub.subscriptionID,
+							int(gap.Seconds()), int(c.config.MessageGapThreshold.Seconds()))
+					}
+				}
+			}
+
+			log.Logger.Infof("Read-stream status. region=%s groupId=%s disconnected=%t connectedForSec=%d reconnectCount=%d streams=[%s]",
+				c.config.Domain, c.config.GroupID, disconnected,
+				int(time.Since(connectedSince).Seconds()), reconnects, streams)
 		case <-c.ctx.Done():
 			return
 		}

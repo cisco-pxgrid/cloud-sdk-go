@@ -109,6 +109,18 @@ type Config struct {
 
 	// DeviceMessageHandler is invoked when a new data message is received
 	DeviceMessageHandler func(messageID string, device *Device, stream string, payload []byte)
+
+	// StatusLogInterval controls how often the SDK logs read-stream connection status and a
+	// per-stream message-count summary for diagnostics. Default is 60 seconds.
+	StatusLogInterval time.Duration
+
+	// LogEachMessage controls whether the SDK logs a concise INFO line for every message
+	// received on the read stream, before processing. Defaults to true (enabled) when nil.
+	LogEachMessage *bool
+
+	// MessageGapThreshold controls how long a subscribed stream may receive no messages,
+	// while the connection is up, before the SDK logs a WARN. Default is 2 minutes.
+	MessageGapThreshold time.Duration
 }
 
 // App represents an instance of a pxGrid Cloud Application
@@ -188,6 +200,8 @@ func New(config Config) (*App, error) {
 	}
 
 	app.ctx, app.ctxCancel = context.WithCancel(context.Background())
+	log.Logger.Infof("Read-stream diagnostics config. statusLogInterval=%s messageGapThreshold=%s logEachMessage=%t (0 durations fall back to SDK defaults 60s/2m)",
+		config.StatusLogInterval, config.MessageGapThreshold, app.logEachMessage())
 	return app, nil
 }
 
@@ -281,7 +295,10 @@ func (app *App) pubsubConnect() error {
 					return []byte(app.config.ApiKey), nil
 				}
 			},
-			Transport: app.config.Transport,
+			Transport:           app.config.Transport,
+			StatusLogInterval:   app.config.StatusLogInterval,
+			LogEachMessage:      app.logEachMessage(),
+			MessageGapThreshold: app.config.MessageGapThreshold,
 		})
 		if connectionErr != nil {
 			return fmt.Errorf("failed to create pubsub connection: %v", connectionErr)
@@ -319,12 +336,25 @@ const (
 	msgTypeAppDisconnect = "app:disconnect"
 )
 
+// logEachMessage resolves the per-message logging setting, defaulting to true when unset.
+func (app *App) logEachMessage() bool {
+	if app.config.LogEachMessage != nil {
+		return *app.config.LogEachMessage
+	}
+	return true
+}
+
 // readStreamHandler returns the callback that handles messages received on the app's read stream
 func (app *App) readStreamHandler() pubsub.SubscriptionCallback {
 	return func(err error, id string, headers map[string]string, payload []byte) {
 		if err != nil {
 			log.Logger.Errorf("Received error for %s stream: %v", app.config.ReadStreamID, err)
 			return
+		}
+
+		if app.logEachMessage() {
+			log.Logger.Infof("App received read-stream message. msgID=%s type=%s topic=%s tenant=%s device=%s bytes=%d",
+				id, headers[msgType], headers["stream"], headers[tenantKey], headers[deviceKey], len(payload))
 		}
 
 		switch headers[msgType] {

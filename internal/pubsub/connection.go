@@ -73,9 +73,16 @@ var (
 	pongWait            = 60 * time.Second
 	defaultPollInterval = 1 * time.Second
 	handlersExpiration  = 3 * time.Minute
-	WebSocketScheme     = "wss"
-	HttpScheme          = "https"
-	apiPaths            = struct {
+
+	// defaultStatusLogInterval is how often the connection logs a status heartbeat
+	// and a per-stream message-count summary for diagnostics.
+	defaultStatusLogInterval = 60 * time.Second
+	// defaultMessageGapThreshold is how long a subscribed stream may receive no
+	// messages, while the connection is up, before a WARN is logged.
+	defaultMessageGapThreshold = 2 * time.Minute
+	WebSocketScheme            = "wss"
+	HttpScheme                 = "https"
+	apiPaths                   = struct {
 		subscriptions string
 		pubsub        string
 	}{
@@ -112,7 +119,112 @@ type Config struct {
 	// Default is 1 second.
 	PollInterval time.Duration
 
+	// StatusLogInterval defines how often the connection logs a status heartbeat and a
+	// per-stream message-count summary for diagnostics. Default is 60 seconds.
+	StatusLogInterval time.Duration
+
+	// LogEachMessage, when true, logs a concise INFO line for every message as soon as it
+	// is received on the read stream, before any processing.
+	LogEachMessage bool
+
+	// MessageGapThreshold defines how long a subscribed stream may receive no messages,
+	// while the connection is up, before a WARN is logged. Default is 2 minutes.
+	MessageGapThreshold time.Duration
+
 	Transport *http.Transport
+
+	// stats holds shared read-stream diagnostic metrics. It is injected by NewConnection so
+	// that it survives across reconnects (each reconnect builds a new internalConnection from
+	// the same Config). It is unexported and cannot be set by callers.
+	stats *connStats
+}
+
+// connStats tracks read-stream delivery and connection-status metrics for diagnostic
+// logging. A single instance is shared across reconnects via Config.stats.
+type connStats struct {
+	mu             sync.Mutex
+	connectedSince time.Time            // when the current underlying connection was established
+	reconnectCount int                  // number of reconnects performed so far
+	lastMessage    map[string]time.Time // per-stream time of the most recent message
+	msgCount       map[string]int64     // per-stream message count since the last summary
+}
+
+func newConnStats() *connStats {
+	return &connStats{
+		lastMessage: make(map[string]time.Time),
+		msgCount:    make(map[string]int64),
+	}
+}
+
+// recordConnected marks the time the underlying connection was established.
+func (s *connStats) recordConnected() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.connectedSince = time.Now()
+}
+
+// recordReconnect increments the reconnect counter.
+func (s *connStats) recordReconnect() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reconnectCount++
+}
+
+// recordMessage records the arrival of a message on the given stream.
+func (s *connStats) recordMessage(stream string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastMessage[stream] = time.Now()
+	s.msgCount[stream]++
+}
+
+// initStream seeds the last-message time for a stream so gap detection has a baseline.
+func (s *connStats) initStream(stream string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.lastMessage[stream]; !ok {
+		s.lastMessage[stream] = time.Now()
+	}
+}
+
+// reconnectSnapshot returns the current reconnect count.
+func (s *connStats) reconnectSnapshot() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reconnectCount
+}
+
+// sinceLastMessage returns the elapsed time since the most recent message on the stream.
+// It returns 0 if no message has been recorded for the stream.
+func (s *connStats) sinceLastMessage(stream string) time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ts, ok := s.lastMessage[stream]
+	if !ok {
+		return 0
+	}
+	return time.Since(ts)
+}
+
+// snapshotAndReset returns a point-in-time view of the diagnostic metrics and resets the
+// per-stream message counters. connectedSince and reconnectCount are returned as-is. sinceLast
+// holds, per stream, the elapsed time since the most recent message. counts holds the number of
+// messages received per stream since the previous snapshot.
+func (s *connStats) snapshotAndReset() (connectedSince time.Time, reconnectCount int, sinceLast map[string]time.Duration, counts map[string]int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	sinceLast = make(map[string]time.Duration, len(s.lastMessage))
+	for stream, ts := range s.lastMessage {
+		sinceLast[stream] = now.Sub(ts)
+	}
+	counts = make(map[string]int64, len(s.msgCount))
+	for stream, n := range s.msgCount {
+		counts[stream] = n
+	}
+	// Reset the interval counters.
+	s.msgCount = make(map[string]int64)
+	return s.connectedSince, s.reconnectCount, sinceLast, counts
 }
 
 // internalConnection represents a connection to the DxHub PubSub server.
@@ -156,6 +268,15 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 	}
 	if config.PollInterval == 0 {
 		config.PollInterval = defaultPollInterval
+	}
+	if config.StatusLogInterval == 0 {
+		config.StatusLogInterval = defaultStatusLogInterval
+	}
+	if config.MessageGapThreshold == 0 {
+		config.MessageGapThreshold = defaultMessageGapThreshold
+	}
+	if config.stats == nil {
+		config.stats = newConnStats()
 	}
 
 	httpClient := resty.New()
@@ -223,6 +344,7 @@ func (c *internalConnection) connect(ctx context.Context) error {
 		return fmt.Errorf("failed to connect: %v", err)
 	}
 	log.Logger.Infof("Connected to PubSub server. url=%s groupId=%s", brokerSubURL.String(), c.config.GroupID)
+	c.config.stats.recordConnected()
 	c.ws.SetReadLimit(maxMessageSize)
 
 	c.wg.Add(1)

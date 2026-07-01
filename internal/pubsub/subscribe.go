@@ -64,6 +64,9 @@ func (c *internalConnection) subscribe(stream string, subscriptionID string, han
 	}
 	c.subs.table[stream] = sub
 
+	// Seed the last-message baseline so gap detection does not fire immediately after subscribe.
+	c.config.stats.initStream(stream)
+
 	c.wg.Add(1)
 	sub.wg.Add(1)
 	go c.subscriber(sub)
@@ -208,14 +211,21 @@ func (c *internalConnection) subscriber(sub *subscription) {
 				continue
 			}
 			for _, m := range messages {
-				payload, err := base64.StdEncoding.DecodeString(m.Payload)
-				sub.callback(err, m.MsgID, m.Headers, payload)
+				payload, decodeErr := base64.StdEncoding.DecodeString(m.Payload)
+				c.config.stats.recordMessage(sub.stream)
+				if c.config.LogEachMessage {
+					log.Logger.Infof("Read-stream message received. region=%s stream=%s topic=%s msgID=%s type=%s tenant=%s device=%s bytes=%d subID=%s consumeCtx=%s decodeErr=%v",
+						c.config.Domain, sub.stream, m.Headers["stream"], m.MsgID, m.Headers["messageType"],
+						m.Headers["tenant"], m.Headers["device"], len(payload), sub.id, res.ConsumeContext, decodeErr)
+				}
+				sub.callback(decodeErr, m.MsgID, m.Headers, payload)
 			}
 		}
 	}
 	if err != nil {
 		if err == errConsumeTimeout {
-			log.Logger.Warnf("Consume timeout. Disconnecting")
+			log.Logger.Warnf("Consume timeout. Disconnecting. region=%s stream=%s subID=%s sinceLastMsgSec=%d",
+				c.config.Domain, sub.stream, sub.id, int(c.config.stats.sinceLastMessage(sub.stream).Seconds()))
 			c.consumeTimeout = true
 			// This requires a go routine otherwise the waitgroup blocks forever
 			go c.disconnect()
