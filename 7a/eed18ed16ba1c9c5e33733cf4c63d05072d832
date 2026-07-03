@@ -1,0 +1,31 @@
+internal/pubsub/reconnect.go
+  s_95c5ed48da9ea8::t_1767dc971f693a 8-9,16-48,227-232,238,240
+internal/pubsub/subscribe.go
+  s_95c5ed48da9ea8::t_c1cfd59f983aa3 218-222,224
+internal/pubsub/connstats_test.go
+  s_95c5ed48da9ea8::t_fea371a4d477e1 199-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7aeed18ed16ba1c9c5e33733cf4c63d05072d832",
+  "prompts": {},
+  "humans": {
+    "h_18a637ae2a5e9c": {
+      "author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco)"
+    },
+    "h_28c5b11db43a13": {
+      "author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  },
+  "sessions": {
+    "s_95c5ed48da9ea8": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "d955b60b-418d-40db-bb29-5a5ccf9814c0",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  }
+}
