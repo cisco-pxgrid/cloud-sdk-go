@@ -150,6 +150,7 @@ func (c *internalConnection) consumer(sub *subscription, resultCh chan *rpc.Cons
 			select {
 			case resultCh <- res:
 				consumeCtx = res.ConsumeContext
+				c.config.stats.recordConsume(sub.stream, consumeCtx)
 			case <-time.After(resultProcessingTimeout):
 				return errConsumeTimeout
 			}

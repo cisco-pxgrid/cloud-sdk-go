@@ -147,12 +147,16 @@ type connStats struct {
 	reconnectCount int                  // number of reconnects performed so far
 	lastMessage    map[string]time.Time // per-stream time of the most recent message
 	msgCount       map[string]int64     // per-stream message count since the last summary
+	consumeIters   map[string]int64     // per-stream consume responses received since the last summary
+	lastConsumeCtx map[string]string    // per-stream most recent consumeContext (broker offset cursor)
 }
 
 func newConnStats() *connStats {
 	return &connStats{
-		lastMessage: make(map[string]time.Time),
-		msgCount:    make(map[string]int64),
+		lastMessage:    make(map[string]time.Time),
+		msgCount:       make(map[string]int64),
+		consumeIters:   make(map[string]int64),
+		lastConsumeCtx: make(map[string]string),
 	}
 }
 
@@ -176,6 +180,17 @@ func (s *connStats) recordMessage(stream string) {
 	defer s.mu.Unlock()
 	s.lastMessage[stream] = time.Now()
 	s.msgCount[stream]++
+}
+
+// recordConsume records that the consumer loop received a consume response for the stream,
+// capturing the latest consumeContext (the broker's opaque offset cursor). The per-interval
+// iteration count distinguishes a live-but-quiet consumer (consumeIters>0 with received==0)
+// from a hung/stalled consumer (consumeIters==0 while the connection is up).
+func (s *connStats) recordConsume(stream, consumeCtx string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.consumeIters[stream]++
+	s.lastConsumeCtx[stream] = consumeCtx
 }
 
 // initStream seeds the last-message time for a stream so gap detection has a baseline.
@@ -210,7 +225,7 @@ func (s *connStats) sinceLastMessage(stream string) time.Duration {
 // per-stream message counters. connectedSince and reconnectCount are returned as-is. sinceLast
 // holds, per stream, the elapsed time since the most recent message. counts holds the number of
 // messages received per stream since the previous snapshot.
-func (s *connStats) snapshotAndReset() (connectedSince time.Time, reconnectCount int, sinceLast map[string]time.Duration, counts map[string]int64) {
+func (s *connStats) snapshotAndReset() (connectedSince time.Time, reconnectCount int, sinceLast map[string]time.Duration, counts map[string]int64, consumeIters map[string]int64, lastConsumeCtx map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
@@ -222,9 +237,19 @@ func (s *connStats) snapshotAndReset() (connectedSince time.Time, reconnectCount
 	for stream, n := range s.msgCount {
 		counts[stream] = n
 	}
+	consumeIters = make(map[string]int64, len(s.consumeIters))
+	for stream, n := range s.consumeIters {
+		consumeIters[stream] = n
+	}
+	// lastConsumeCtx is a "last known" value and is intentionally not reset.
+	lastConsumeCtx = make(map[string]string, len(s.lastConsumeCtx))
+	for stream, ctx := range s.lastConsumeCtx {
+		lastConsumeCtx[stream] = ctx
+	}
 	// Reset the interval counters.
 	s.msgCount = make(map[string]int64)
-	return s.connectedSince, s.reconnectCount, sinceLast, counts
+	s.consumeIters = make(map[string]int64)
+	return s.connectedSince, s.reconnectCount, sinceLast, counts, consumeIters, lastConsumeCtx
 }
 
 // internalConnection represents a connection to the DxHub PubSub server.

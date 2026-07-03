@@ -76,17 +76,24 @@ func TestConnStats_RecordAndSnapshot(t *testing.T) {
 	s.recordMessage("stream-a")
 	s.recordMessage("stream-b")
 
-	connectedSince, reconnects, sinceLast, counts := s.snapshotAndReset()
+	s.recordConsume("stream-a", "ctx-1")
+	s.recordConsume("stream-a", "ctx-2")
+
+	connectedSince, reconnects, sinceLast, counts, consumeIters, lastConsumeCtx := s.snapshotAndReset()
 	require.Equal(t, int64(2), counts["stream-a"])
 	require.Equal(t, int64(1), counts["stream-b"])
+	require.Equal(t, int64(2), consumeIters["stream-a"])
+	require.Equal(t, "ctx-2", lastConsumeCtx["stream-a"])
 	require.Equal(t, 0, reconnects)
 	require.True(t, connectedSince.IsZero(), "connectedSince should be zero before recordConnected")
 	require.Contains(t, sinceLast, "stream-a")
 
-	// Counters reset after snapshot.
-	_, _, _, counts2 := s.snapshotAndReset()
+	// Counters reset after snapshot; lastConsumeCtx is retained as a last-known value.
+	_, _, _, counts2, consumeIters2, lastConsumeCtx2 := s.snapshotAndReset()
 	require.Equal(t, int64(0), counts2["stream-a"])
 	require.Equal(t, int64(0), counts2["stream-b"])
+	require.Equal(t, int64(0), consumeIters2["stream-a"])
+	require.Equal(t, "ctx-2", lastConsumeCtx2["stream-a"])
 }
 
 func TestConnStats_ConnectedAndReconnect(t *testing.T) {
@@ -94,7 +101,7 @@ func TestConnStats_ConnectedAndReconnect(t *testing.T) {
 	require.Equal(t, 0, s.reconnectSnapshot())
 
 	s.recordConnected()
-	connectedSince, _, _, _ := s.snapshotAndReset()
+	connectedSince, _, _, _, _, _ := s.snapshotAndReset()
 	require.False(t, connectedSince.IsZero())
 
 	s.recordReconnect()
@@ -136,7 +143,7 @@ func TestConnStats_SharedAcrossConnections(t *testing.T) {
 
 	c1.config.stats.recordMessage("s")
 	require.Equal(t, time.Duration(0) <= c2.config.stats.sinceLastMessage("s"), true)
-	_, _, _, counts := c2.config.stats.snapshotAndReset()
+	_, _, _, counts, _, _ := c2.config.stats.snapshotAndReset()
 	require.Equal(t, int64(1), counts["s"])
 }
 

@@ -181,22 +181,24 @@ func (c *Connection) statusLogger() {
 		select {
 		case <-ticker.C:
 			disconnected := c.IsDisconnected()
-			connectedSince, reconnects, sinceLast, counts := c.config.stats.snapshotAndReset()
+			connectedSince, reconnects, sinceLast, counts, consumeIters, lastConsumeCtx := c.config.stats.snapshotAndReset()
 
 			// Build a stable list of subscribed streams with their subscription IDs.
 			var streams string
 			for stream, sub := range c.subscriptions {
 				received := counts[stream]
-				log.Logger.Infof("Read-stream summary. region=%s stream=%s subID=%s received=%d intervalSec=%d disconnected=%t",
-					c.config.Domain, stream, sub.subscriptionID, received, int(interval.Seconds()), disconnected)
+				iters := consumeIters[stream]
+				consumeCtx := lastConsumeCtx[stream]
+				log.Logger.Infof("Read-stream summary. region=%s stream=%s subID=%s received=%d consumeIters=%d intervalSec=%d disconnected=%t lastConsumeCtx=%s",
+					c.config.Domain, stream, sub.subscriptionID, received, iters, int(interval.Seconds()), disconnected, consumeCtx)
 				streams += stream + " "
 
 				// Gap detection: connection is up but no messages for longer than the threshold.
 				if !disconnected {
 					if gap, ok := sinceLast[stream]; ok && gap > c.config.MessageGapThreshold {
-						log.Logger.Warnf("Read-stream gap detected. region=%s stream=%s subID=%s noMessagesForSec=%d thresholdSec=%d (connection up)",
+						log.Logger.Warnf("Read-stream gap detected. region=%s stream=%s subID=%s noMessagesForSec=%d thresholdSec=%d consumeItersInterval=%d lastConsumeCtx=%s (connection up)",
 							c.config.Domain, stream, sub.subscriptionID,
-							int(gap.Seconds()), int(c.config.MessageGapThreshold.Seconds()))
+							int(gap.Seconds()), int(c.config.MessageGapThreshold.Seconds()), iters, consumeCtx)
 					}
 				}
 			}
