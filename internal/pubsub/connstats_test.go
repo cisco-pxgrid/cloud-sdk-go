@@ -196,3 +196,26 @@ func TestGapDetection_Logic(t *testing.T) {
 	require.True(t, cl.warnContains("Read-stream gap detected."))
 	require.True(t, cl.warnContains("stream=app--x-R"))
 }
+
+func TestDecodeConsumeOffset(t *testing.T) {
+	// {"streams":[{"stream":"app--x-R","partition":1,"offset":6202}]}
+	const ctx = "eyJzdHJlYW1zIjpbeyJzdHJlYW0iOiJhcHAtLXgtUiIsInBhcnRpdGlvbiI6MSwib2Zmc2V0Ijo2MjAyfV19"
+	p, o, ok := decodeConsumeOffset(ctx, "app--x-R")
+	require.True(t, ok)
+	require.Equal(t, int64(1), p)
+	require.Equal(t, int64(6202), o)
+
+	// Stream not present in the cursor.
+	_, _, ok = decodeConsumeOffset(ctx, "app--other-R")
+	require.False(t, ok)
+
+	// Empty cursor ({"streams":[]}) yields no match.
+	_, _, ok = decodeConsumeOffset("eyJzdHJlYW1zIjpbXX0=", "app--x-R")
+	require.False(t, ok)
+
+	// Empty and undecodable inputs are handled gracefully.
+	_, _, ok = decodeConsumeOffset("", "app--x-R")
+	require.False(t, ok)
+	_, _, ok = decodeConsumeOffset("!!!not-base64!!!", "app--x-R")
+	require.False(t, ok)
+}

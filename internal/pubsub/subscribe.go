@@ -215,9 +215,13 @@ func (c *internalConnection) subscriber(sub *subscription) {
 				payload, decodeErr := base64.StdEncoding.DecodeString(m.Payload)
 				c.config.stats.recordMessage(sub.stream)
 				if c.config.LogEachMessage {
-					log.Logger.Infof("Read-stream message received. region=%s stream=%s topic=%s msgID=%s type=%s tenant=%s device=%s bytes=%d subID=%s consumeCtx=%s decodeErr=%v",
+					partition, offset := int64(-1), int64(-1)
+					if p, o, ok := decodeConsumeOffset(res.ConsumeContext, sub.stream); ok {
+						partition, offset = p, o
+					}
+					log.Logger.Infof("Read-stream message received. region=%s stream=%s topic=%s msgID=%s type=%s tenant=%s device=%s bytes=%d subID=%s partition=%d offset=%d consumeCtx=%s decodeErr=%v",
 						c.config.Domain, sub.stream, m.Headers["stream"], m.MsgID, m.Headers["messageType"],
-						m.Headers["tenant"], m.Headers["device"], len(payload), sub.id, res.ConsumeContext, decodeErr)
+						m.Headers["tenant"], m.Headers["device"], len(payload), sub.id, partition, offset, res.ConsumeContext, decodeErr)
 				}
 				sub.callback(decodeErr, m.MsgID, m.Headers, payload)
 			}

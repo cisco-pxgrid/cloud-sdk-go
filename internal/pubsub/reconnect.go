@@ -5,11 +5,46 @@ package pubsub
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 )
+
+// consumeCtxStreams mirrors the decoded shape of the base64 consumeContext cursor:
+// {"streams":[{"stream":"...","partition":N,"offset":N}]}.
+type consumeCtxStreams struct {
+	Streams []struct {
+		Stream    string `json:"stream"`
+		Partition int64  `json:"partition"`
+		Offset    int64  `json:"offset"`
+	} `json:"streams"`
+}
+
+// decodeConsumeOffset decodes the base64 consumeContext and returns the partition and offset
+// for the given stream. ok is false if the context is empty, undecodable, or has no entry for
+// the stream (e.g. before the first message, when the cursor is {"streams":[]}).
+func decodeConsumeOffset(consumeCtx, stream string) (partition, offset int64, ok bool) {
+	if consumeCtx == "" {
+		return 0, 0, false
+	}
+	raw, err := base64.StdEncoding.DecodeString(consumeCtx)
+	if err != nil {
+		return 0, 0, false
+	}
+	var cc consumeCtxStreams
+	if err := json.Unmarshal(raw, &cc); err != nil {
+		return 0, 0, false
+	}
+	for _, s := range cc.Streams {
+		if s.Stream == stream {
+			return s.Partition, s.Offset, true
+		}
+	}
+	return 0, 0, false
+}
 
 // Connection represents a connection to the DxHub PubSub server.
 type Connection struct {
@@ -189,16 +224,20 @@ func (c *Connection) statusLogger() {
 				received := counts[stream]
 				iters := consumeIters[stream]
 				consumeCtx := lastConsumeCtx[stream]
-				log.Logger.Infof("Read-stream summary. region=%s stream=%s subID=%s received=%d consumeIters=%d intervalSec=%d disconnected=%t lastConsumeCtx=%s",
-					c.config.Domain, stream, sub.subscriptionID, received, iters, int(interval.Seconds()), disconnected, consumeCtx)
+				partition, offset := int64(-1), int64(-1)
+				if p, o, ok := decodeConsumeOffset(consumeCtx, stream); ok {
+					partition, offset = p, o
+				}
+				log.Logger.Infof("Read-stream summary. region=%s stream=%s subID=%s received=%d consumeIters=%d intervalSec=%d disconnected=%t partition=%d offset=%d lastConsumeCtx=%s",
+					c.config.Domain, stream, sub.subscriptionID, received, iters, int(interval.Seconds()), disconnected, partition, offset, consumeCtx)
 				streams += stream + " "
 
 				// Gap detection: connection is up but no messages for longer than the threshold.
 				if !disconnected {
 					if gap, ok := sinceLast[stream]; ok && gap > c.config.MessageGapThreshold {
-						log.Logger.Warnf("Read-stream gap detected. region=%s stream=%s subID=%s noMessagesForSec=%d thresholdSec=%d consumeItersInterval=%d lastConsumeCtx=%s (connection up)",
+						log.Logger.Warnf("Read-stream gap detected. region=%s stream=%s subID=%s noMessagesForSec=%d thresholdSec=%d consumeItersInterval=%d partition=%d offset=%d lastConsumeCtx=%s (connection up)",
 							c.config.Domain, stream, sub.subscriptionID,
-							int(gap.Seconds()), int(c.config.MessageGapThreshold.Seconds()), iters, consumeCtx)
+							int(gap.Seconds()), int(c.config.MessageGapThreshold.Seconds()), iters, partition, offset, consumeCtx)
 					}
 				}
 			}
