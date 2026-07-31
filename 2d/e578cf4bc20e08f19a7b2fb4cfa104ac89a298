@@ -1,0 +1,115 @@
+app_test.go
+  s_ccb708a419bf66::t_13d57ba097154a 121-122,338
+  s_ccb708a419bf66::t_e91d683311d7a7 6,9-10,17,22-62,74-93,97-100,102-105,107-120
+  s_ccb708a419bf66::t_a52fa13008f931 123-143
+  s_ccb708a419bf66::t_cbd5a04c2301d4 101
+  s_ccb708a419bf66::t_765e5c8a607e7a 94-96,106
+  s_ccb708a419bf66::t_f9921c3f55e759 63-73
+  s_ccb708a419bf66::t_3dc6c87cabace3 146-151,256-337
+internal/pubsub/reconnect.go
+  s_ccb708a419bf66::t_988e02cb708ac4 200-202
+  s_ccb708a419bf66::t_e5804063b624de 267-270,272-273
+  s_ccb708a419bf66::t_3368815b3cf416 59,188,194,203,211,221,240-253,317-319,364,372-374
+  s_ccb708a419bf66::t_6dd7b46c67d00e 271,280-281,297-298,313-315,394-398,401-403,406,410,413-414
+  s_ccb708a419bf66::t_d391597dcf4e41 11
+  s_ccb708a419bf66::t_b4cf6d5b4d569b 54-57,108,122-123,129-130,135-136,153,164,170,184-185,192-193,195,198,207-209,219,234-237
+  s_ccb708a419bf66::t_331601805ed6b2 52-53,145,147,156,158,182,228-233,238-239,254-263,366,369-370,425,428
+  s_ccb708a419bf66::t_e196f43dbeed01 264-266,274-279,282-296,299-312,316,323-339,348-350,356-357,363,365,371,375,377,382-388,393,399-400,411-412,416-418,421,423,426-427,430
+  s_ccb708a419bf66::t_bfe7f8cd8e08eb 320-322,389-392,404-405
+  s_ccb708a419bf66::t_fafe07331feabc 340-347,409,415
+  s_ccb708a419bf66::t_9f2931d1028e64 376
+internal/pubsub/connection_diagnostics_concurrency_test.go
+  s_ccb708a419bf66::t_0b1b68efa612ac 52-63,80
+  s_ccb708a419bf66::t_54808924b14dce 1-51,64-79,81-86
+app.go
+  s_ccb708a419bf66::t_f9921c3f55e759 125,347,352
+  s_ccb708a419bf66::t_284ec1f9cfa377 49-54,319,325,356,375,456,509-511,513-520,524,530,532-534,542,559-560,568-570,572,575-590
+  s_ccb708a419bf66::t_988e02cb708ac4 521-523,527-529,535-541,543-558,561-567,571,573-574,591
+  s_ccb708a419bf66::t_8bc5d8fae033d7 116-117,128-130
+  s_ccb708a419bf66::t_cbd5a04c2301d4 499-503,512,525-526,531
+  s_ccb708a419bf66::t_de42a3519ef88e 592
+examples/read-stream-stall-simulator/server.go
+  s_ccb708a419bf66::t_f897aa2ea9cbf5 47-49
+  s_ccb708a419bf66::t_bc622d0e570b9c 1-46,51-71,73-143,145,147-274
+  s_ccb708a419bf66::t_2e01db1ebb55b0 72
+  s_ccb708a419bf66::t_988e02cb708ac4 50,144,146
+internal/pubsub/connstats_test.go
+  s_ccb708a419bf66::t_9f2931d1028e64 350-351,354-355,360-361,365
+  s_ccb708a419bf66::t_f099864eedc294 256,269,310
+  s_ccb708a419bf66::t_90abc5675db0e5 315-320,322
+  s_ccb708a419bf66::t_58e76e57a94eb0 347-349,352-353,356-359,362-364,366,372-374,376-377,381,383-384,386
+  s_ccb708a419bf66::t_ae057eddf3c46f 100,104-107,110-114,117-118,122-124,126-128,131,141,215,217,246-249,253-255,257-265,272-274,277-278,285-306,308-309,311
+  s_ccb708a419bf66::t_e892b8a394578a 19-23
+  s_95c5ed48da9ea8::t_304fd2eb92985e 95-98,101,250,313
+  s_ccb708a419bf66::t_aa563b4a8bbd88 76-85,378-380,382
+  s_ccb708a419bf66::t_022cfe78bffa1c 103,108,115-116,119-121,130,132-133,251,275-276,281-282,321,375
+  s_ccb708a419bf66::t_bfe7f8cd8e08eb 279-280,283-284
+  s_ccb708a419bf66::t_988e02cb708ac4 367-371,385
+  s_ccb708a419bf66::t_d11a9153c9ad20 24,30-32,37-39,44-46,51-53,86-94
+  s_ccb708a419bf66::t_c33dff4ab99568 148-182,266-268,270-271
+  s_95c5ed48da9ea8::t_be7662460fb11e 314
+examples/read-stream-stall-simulator/main.go
+  s_ccb708a419bf66::t_bc622d0e570b9c 1-18,23-127,132-162,172-301
+  s_ccb708a419bf66::t_dfe1a9ccf59674 19-22,128-131,163-171
+examples/read-stream-stall-simulator/main_test.go
+  s_ccb708a419bf66::t_dfe1a9ccf59674 21-23,25
+  s_ccb708a419bf66::t_bc622d0e570b9c 1-20,24,26-41
+internal/pubsub/subscribe.go
+  s_ccb708a419bf66::t_e61f24d0e1e8d3 162-169,245
+  s_ccb708a419bf66::t_6dd7b46c67d00e 258,262,264
+  s_ccb708a419bf66::t_f46482bb6e83ea 274
+  s_ccb708a419bf66::t_988e02cb708ac4 225-226,228-236,263,287,334,336-337,339-340,352
+  s_ccb708a419bf66::t_9f2931d1028e64 34-41,222-224,286,288,297,307,332-333
+  s_95c5ed48da9ea8::t_a52665d6fc9319 42,227,256-257,259,261,265-266,294-296,298-299,301-306,308-309,311-313,346-350,360-362
+  s_ccb708a419bf66::t_3368815b3cf416 76-78,111-113
+  s_ccb708a419bf66::t_38511bb57501a3 289-293,300,310,314-331,335,338,341-345,351,353-359,363
+  s_ccb708a419bf66::t_afe2712eaf5511 237
+  s_ccb708a419bf66::t_f61d577ba2c2db 364
+examples/read-stream-diagnostics/main.go
+  s_ccb708a419bf66::t_988e02cb708ac4 200-202,235
+  s_ccb708a419bf66::t_c4f0c718934edf 1-199,203-234,236-383
+internal/pubsub/read_stream_diagnostics_integration_test.go
+  s_ccb708a419bf66::t_c52fa0ccbb11c7 5,56
+  s_ccb708a419bf66::t_f4b49b3096852b 1-4,6-55,57-152
+internal/pubsub/connection.go
+  s_ccb708a419bf66::t_f46482bb6e83ea 60,234,360-362,415-422,609
+  s_ccb708a419bf66::t_ad53cc93c9c9bd 144-146,148-151,153-155,158-159,163-175,178-180,184-189,191,193,210-233,239,250,306,310-314,317-319,322-330
+  s_ccb708a419bf66::t_3368815b3cf416 147,190,255-257,260-265,267,271-280,282-286,288,307
+  s_ccb708a419bf66::t_a9477b86b0a15c 81-82,131-133
+  s_ccb708a419bf66::t_6dd7b46c67d00e 152,156-157,160-162,236,240-244,247,251-252,266,268-270,287,289-291
+  s_ccb708a419bf66::t_cafee2b7923284 235
+internal/pubsub/connection_test.go
+  s_ccb708a419bf66::t_f46482bb6e83ea 402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "2de578cf4bc20e08f19a7b2fb4cfa104ac89a298",
+  "prompts": {},
+  "humans": {
+    "h_18a637ae2a5e9c": {
+      "author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco)"
+    },
+    "h_28c5b11db43a13": {
+      "author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  },
+  "sessions": {
+    "s_95c5ed48da9ea8": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "d955b60b-418d-40db-bb29-5a5ccf9814c0",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    },
+    "s_ccb708a419bf66": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f897c-ac6f-7681-bf93-89503aefb5c2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  }
+}
