@@ -46,6 +46,12 @@ var tlsConfig = tls.Config{
 	},
 }
 
+// DeviceMessageHandler timing is a fixed diagnostics policy: warn after 10 seconds, then emit a
+// reminder at most every 15 seconds until the synchronous user callback returns. Variables are used
+// so deterministic tests can shorten the clock without changing the exported configuration API.
+var deviceMessageHandlerSlowWarnThreshold = 10 * time.Second
+var deviceMessageHandlerReminderInterval = 15 * time.Second
+
 // Credentials are fields that is used for request authorization
 // Credentials required to be stored securely
 type Credentials struct {
@@ -107,7 +113,8 @@ type Config struct {
 	// The stored tenant ID, name and token should be discarded
 	TenantUnlinkedHandler func(tenant *Tenant)
 
-	// DeviceMessageHandler is invoked when a new data message is received
+	// DeviceMessageHandler is invoked synchronously when a new data message is received. Diagnostics
+	// warn when it runs for 10 seconds and repeat at most every 15 seconds until it returns.
 	DeviceMessageHandler func(messageID string, device *Device, stream string, payload []byte)
 
 	// StatusLogInterval controls how often the SDK logs read-stream connection status and a
@@ -115,11 +122,12 @@ type Config struct {
 	StatusLogInterval time.Duration
 
 	// LogEachMessage controls whether the SDK logs a concise INFO line for every message
-	// received on the read stream, before processing. Defaults to true (enabled) when nil.
+	// received on the read stream, before processing. Defaults to false (disabled) when nil.
 	LogEachMessage *bool
 
-	// MessageGapThreshold controls how long a subscribed stream may receive no messages,
-	// while the connection is up, before the SDK logs a WARN. Default is 2 minutes.
+	// MessageGapThreshold controls how long a subscribed stream may receive no broker response,
+	// while the connection is up, before the SDK logs a consumer_stalled transition. Empty broker
+	// responses are classified as broker_quiet. Default is 2 minutes.
 	MessageGapThreshold time.Duration
 }
 
@@ -308,13 +316,13 @@ func (app *App) pubsubConnect() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	for _, connection := range app.conn {
+	for i, connection := range app.conn {
 		err = connection.Connect(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to connect pubsub connection: %v", err)
 		}
 
-		err = connection.Subscribe(app.config.ReadStreamID, app.readStreamHandler())
+		err = connection.Subscribe(app.config.ReadStreamID, app.readStreamHandler(app.config.RegionalFQDNs[i]))
 		if err != nil {
 			return fmt.Errorf("failed to subscribe: %v", err)
 		}
@@ -336,16 +344,16 @@ const (
 	msgTypeAppDisconnect = "app:disconnect"
 )
 
-// logEachMessage resolves the per-message logging setting, defaulting to true when unset.
+// logEachMessage resolves the per-message logging setting, defaulting to false when unset.
 func (app *App) logEachMessage() bool {
 	if app.config.LogEachMessage != nil {
 		return *app.config.LogEachMessage
 	}
-	return true
+	return false
 }
 
 // readStreamHandler returns the callback that handles messages received on the app's read stream
-func (app *App) readStreamHandler() pubsub.SubscriptionCallback {
+func (app *App) readStreamHandler(region string) pubsub.SubscriptionCallback {
 	return func(err error, id string, headers map[string]string, payload []byte) {
 		if err != nil {
 			log.Logger.Errorf("Received error for %s stream: %v", app.config.ReadStreamID, err)
@@ -364,7 +372,7 @@ func (app *App) readStreamHandler() pubsub.SubscriptionCallback {
 				return
 			}
 		case msgTypeData:
-			if err := app.dataMsgHandler(id, headers, payload); err != nil {
+			if err := app.dataMsgHandler(region, id, headers, payload); err != nil {
 				log.Logger.Errorf("Failed to handle data message %s: %v", payload, err)
 			}
 		default:
@@ -445,7 +453,7 @@ func (app *App) controlMsgHandler(id string, payload []byte) error {
 	return nil
 }
 
-func (app *App) dataMsgHandler(id string, headers map[string]string, payload []byte) error {
+func (app *App) dataMsgHandler(region, id string, headers map[string]string, payload []byte) error {
 	tenantId := headers[tenantKey]
 	deviceId := headers[deviceKey]
 
@@ -488,10 +496,98 @@ func (app *App) dataMsgHandler(id string, headers map[string]string, payload []b
 	}
 
 	if app.config.DeviceMessageHandler != nil {
-		app.config.DeviceMessageHandler(headers[msgIDKey], device, headers["stream"], payload)
+		diagnosticMessageID := id
+		if diagnosticMessageID == "" {
+			diagnosticMessageID = headers[msgIDKey]
+		}
+		app.invokeDeviceMessageHandler(region, diagnosticMessageID, headers[msgIDKey], device, headers["stream"], payload)
 	}
 
 	return nil
+}
+
+// invokeDeviceMessageHandler instruments only the user-provided callback. Pub/sub separately times
+// the surrounding SDK read-stream processing, so logs can attribute where synchronous progress is
+// blocked.
+func (app *App) invokeDeviceMessageHandler(region, diagnosticMessageID, handlerMessageID string, device *Device, topic string, payload []byte) {
+	handler := app.config.DeviceMessageHandler
+	if handler == nil {
+		return
+	}
+
+	threshold := deviceMessageHandlerSlowWarnThreshold
+	reminderInterval := deviceMessageHandlerReminderInterval
+	started := time.Now()
+	watchdog := startDeviceMessageHandlerWatchdog(
+		region, diagnosticMessageID, topic, threshold, reminderInterval, started,
+	)
+
+	// Preserve the established callback argument while using the protocol message ID for diagnostics.
+	handler(handlerMessageID, device, topic, payload)
+	elapsed := time.Since(started)
+	watchdog.stop()
+	if threshold > 0 && elapsed >= threshold {
+		log.Logger.Warnf("User DeviceMessageHandler returned after delay. region=%s msgID=%s topic=%s durationSec=%d",
+			region, diagnosticMessageID, topic, int(elapsed.Seconds()))
+	}
+}
+
+type deviceMessageHandlerWatchdog struct {
+	done    chan struct{}
+	stopped chan struct{}
+	timer   *time.Timer
+}
+
+func startDeviceMessageHandlerWatchdog(region, messageID, topic string, threshold, reminderInterval time.Duration, started time.Time) *deviceMessageHandlerWatchdog {
+	if threshold <= 0 {
+		return nil
+	}
+
+	watchdog := &deviceMessageHandlerWatchdog{
+		done:    make(chan struct{}),
+		stopped: make(chan struct{}),
+	}
+	watchdog.timer = time.AfterFunc(threshold, func() {
+		defer close(watchdog.stopped)
+		watchDeviceMessageHandler(watchdog.done, region, messageID, topic, reminderInterval, started)
+	})
+	return watchdog
+}
+
+func (w *deviceMessageHandlerWatchdog) stop() {
+	if w == nil {
+		return
+	}
+	close(w.done)
+	if !w.timer.Stop() {
+		<-w.stopped
+	}
+}
+
+func watchDeviceMessageHandler(done <-chan struct{}, region, messageID, topic string, reminderInterval time.Duration, started time.Time) {
+	select {
+	case <-done:
+		return
+	default:
+	}
+	log.Logger.Warnf("User DeviceMessageHandler slow/blocked. region=%s msgID=%s topic=%s elapsedSec=%d",
+		region, messageID, topic, int(time.Since(started).Seconds()))
+
+	if reminderInterval <= 0 {
+		<-done
+		return
+	}
+	ticker := time.NewTicker(reminderInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			log.Logger.Warnf("User DeviceMessageHandler still blocked. region=%s msgID=%s topic=%s elapsedSec=%d",
+				region, messageID, topic, int(time.Since(started).Seconds()))
+		}
+	}
 }
 
 type redeemOTPRequest struct {

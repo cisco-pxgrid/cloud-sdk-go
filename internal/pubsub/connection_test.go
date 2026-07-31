@@ -399,7 +399,7 @@ func Test_ConsumeTimeout(t *testing.T) {
 
 	select {
 	case <-c.Error:
-		require.True(t, c.consumeTimeout)
+		require.True(t, c.hasConsumeTimeout())
 	case <-time.After(5 * time.Second):
 		require.Fail(t, "Error expected")
 	}

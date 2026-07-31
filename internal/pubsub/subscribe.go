@@ -31,6 +31,15 @@ var resultProcessingTimeout = 60 * time.Second
 var inactivityMessageLogDuration = 10 * time.Minute
 var errConsumeTimeout = errors.New("consume timeout")
 
+// sdkProcessingSlowWarnThreshold is how long the synchronous SDK subscription callback may run
+// before the pub/sub layer logs a warning. The actual user DeviceMessageHandler is timed separately
+// in app.go.
+var sdkProcessingSlowWarnThreshold = 10 * time.Second
+
+// sdkProcessingWatchInterval is how often the watchdog checks in-flight SDK processing and repeats
+// the warning while it remains blocked.
+var sdkProcessingWatchInterval = 15 * time.Second
+
 // subscribe subscribes to a DxHub Pubsub Stream
 func (c *internalConnection) subscribe(stream string, subscriptionID string, handler SubscriptionCallback) (string, error) {
 	c.subs.Lock()
@@ -64,8 +73,9 @@ func (c *internalConnection) subscribe(stream string, subscriptionID string, han
 	}
 	c.subs.table[stream] = sub
 
-	// Seed the last-message baseline so gap detection does not fire immediately after subscribe.
-	c.config.stats.initStream(stream)
+	// Start a fresh diagnostic lifecycle only after subscription creation/reuse succeeds. Process-
+	// lifetime counters remain cumulative across reconnects.
+	c.config.stats.beginStreamLifecycle(stream)
 
 	c.wg.Add(1)
 	sub.wg.Add(1)
@@ -98,6 +108,9 @@ func (c *internalConnection) unsubscribeWithoutLock(stream string, deleteSub boo
 	delete(c.subs.table, stream)
 	sub.ctxCancel()
 	sub.wg.Wait()
+	if deleteSub {
+		c.config.stats.endStreamLifecycle(stream)
+	}
 	log.Logger.Debugf("Successfully unsubscribed from stream %s", stream)
 	return nil
 }
@@ -146,19 +159,20 @@ func (c *internalConnection) consumer(sub *subscription, resultCh chan *rpc.Cons
 			if err != nil {
 				return err
 			}
+			messages, hasStream := res.Messages[sub.stream]
+			// Record the broker observation before the unbuffered subscriber handoff. If the
+			// subscriber is blocked in an app callback, diagnostics must still show that the broker
+			// responded and whether that response contained messages.
+			c.config.stats.recordBrokerResponse(sub.stream, res.ConsumeContext, len(messages))
+			if hasStream && len(messages) > 0 {
+				activity = true
+			}
 
 			select {
 			case resultCh <- res:
 				consumeCtx = res.ConsumeContext
-				c.config.stats.recordConsume(sub.stream, consumeCtx)
 			case <-time.After(resultProcessingTimeout):
 				return errConsumeTimeout
-			}
-
-			if messages, ok := res.Messages[sub.stream]; ok {
-				if len(messages) > 0 {
-					activity = true
-				}
 			}
 		case <-time.After(consumeResponseTimeout):
 			return errConsumeTimeout
@@ -205,6 +219,22 @@ func (c *internalConnection) subscriber(sub *subscription) {
 		close(resultCh)
 	}()
 
+	// This boundary times the complete SDK subscription callback. The application layer separately
+	// times only the user DeviceMessageHandler so operators can attribute the delay.
+	watch := &sdkProcessingWatch{}
+	watchThreshold := sdkProcessingSlowWarnThreshold
+	watchInterval := sdkProcessingWatchInterval
+	watchdogDone := make(chan struct{})
+	watchdogStopped := make(chan struct{})
+	go func() {
+		defer close(watchdogStopped)
+		c.sdkProcessingWatchdog(sub, watch, watchdogDone, watchThreshold, watchInterval)
+	}()
+	defer func() {
+		close(watchdogDone)
+		<-watchdogStopped
+	}()
+
 	for res := range resultCh {
 		for stream, messages := range res.Messages {
 			if stream != sub.stream {
@@ -212,8 +242,8 @@ func (c *internalConnection) subscriber(sub *subscription) {
 				continue
 			}
 			for _, m := range messages {
+				c.config.stats.recordDispatch(sub.stream)
 				payload, decodeErr := base64.StdEncoding.DecodeString(m.Payload)
-				c.config.stats.recordMessage(sub.stream)
 				if c.config.LogEachMessage {
 					partition, offset := int64(-1), int64(-1)
 					if p, o, ok := decodeConsumeOffset(res.ConsumeContext, sub.stream); ok {
@@ -223,7 +253,17 @@ func (c *internalConnection) subscriber(sub *subscription) {
 						c.config.Domain, sub.stream, m.Headers["stream"], m.MsgID, m.Headers["messageType"],
 						m.Headers["tenant"], m.Headers["device"], len(payload), sub.id, partition, offset, res.ConsumeContext, decodeErr)
 				}
+				topic := m.Headers["stream"]
+				watch.begin(m.MsgID, topic)
+				c.config.stats.recordSDKProcessingStart(sub.stream, m.MsgID, topic)
+				cbStart := time.Now()
 				sub.callback(decodeErr, m.MsgID, m.Headers, payload)
+				watch.end()
+				c.config.stats.recordSDKProcessingComplete(sub.stream)
+				if d := time.Since(cbStart); watchThreshold > 0 && d >= watchThreshold {
+					log.Logger.Warnf("SDK read-stream processing returned after delay. region=%s stream=%s subID=%s msgID=%s topic=%s durationSec=%d",
+						c.config.Domain, sub.stream, sub.id, m.MsgID, topic, int(d.Seconds()))
+				}
 			}
 		}
 	}
@@ -231,7 +271,7 @@ func (c *internalConnection) subscriber(sub *subscription) {
 		if err == errConsumeTimeout {
 			log.Logger.Warnf("Consume timeout. Disconnecting. region=%s stream=%s subID=%s sinceLastMsgSec=%d",
 				c.config.Domain, sub.stream, sub.id, int(c.config.stats.sinceLastMessage(sub.stream).Seconds()))
-			c.consumeTimeout = true
+			c.markConsumeTimeout()
 			// This requires a go routine otherwise the waitgroup blocks forever
 			go c.disconnect()
 		} else {
@@ -241,6 +281,85 @@ func (c *internalConnection) subscriber(sub *subscription) {
 	}
 
 	log.Logger.Debugf("Stopped subscriber thread for %s", sub.stream)
+}
+
+// sdkProcessingWatch tracks currently in-flight SDK subscription processing. The mutex is held
+// only around the small begin/end/read operations, never during the callback itself.
+type sdkProcessingWatch struct {
+	mu          sync.Mutex
+	start       time.Time
+	lastWarning time.Time
+	msgID       string
+	topic       string
+}
+
+// begin records that a callback for msgID/topic has started.
+func (w *sdkProcessingWatch) begin(msgID, topic string) {
+	w.mu.Lock()
+	w.start = time.Now()
+	w.lastWarning = time.Time{}
+	w.msgID = msgID
+	w.topic = topic
+	w.mu.Unlock()
+}
+
+// end clears the in-flight marker once the callback returns.
+func (w *sdkProcessingWatch) end() {
+	w.mu.Lock()
+	w.start = time.Time{}
+	w.lastWarning = time.Time{}
+	w.mu.Unlock()
+}
+
+func (w *sdkProcessingWatch) warningDue(now time.Time, threshold, reminderInterval time.Duration) (elapsed time.Duration, msgID, topic string, initial, due bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.start.IsZero() || threshold <= 0 {
+		return 0, "", "", false, false
+	}
+	elapsed = now.Sub(w.start)
+	if elapsed < threshold {
+		return 0, "", "", false, false
+	}
+	initial = w.lastWarning.IsZero()
+	if !initial && (reminderInterval <= 0 || now.Sub(w.lastWarning) < reminderInterval) {
+		return 0, "", "", false, false
+	}
+	w.lastWarning = now
+	return elapsed, w.msgID, w.topic, initial, true
+}
+
+// sdkProcessingWatchdog reports SDK subscription processing that exceeds the fixed threshold. It
+// repeats at the configured fixed reminder interval and does not change processing or recovery.
+func (c *internalConnection) sdkProcessingWatchdog(sub *subscription, watch *sdkProcessingWatch, done <-chan struct{}, threshold, reminderInterval time.Duration) {
+	checkInterval := time.Second
+	if threshold > 0 && threshold < checkInterval {
+		checkInterval = threshold
+	}
+	if reminderInterval > 0 && reminderInterval < checkInterval {
+		checkInterval = reminderInterval
+	}
+	if checkInterval <= 0 {
+		checkInterval = time.Second
+	}
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case now := <-ticker.C:
+			if elapsed, msgID, topic, initial, due := watch.warningDue(now, threshold, reminderInterval); due {
+				if initial {
+					log.Logger.Warnf("SDK read-stream processing slow/blocked; subscriber cannot consume until it returns. region=%s stream=%s subID=%s msgID=%s topic=%s elapsedSec=%d",
+						c.config.Domain, sub.stream, sub.id, msgID, topic, int(elapsed.Seconds()))
+				} else {
+					log.Logger.Warnf("SDK read-stream processing still blocked; subscriber cannot consume until it returns. region=%s stream=%s subID=%s msgID=%s topic=%s elapsedSec=%d",
+						c.config.Domain, sub.stream, sub.id, msgID, topic, int(elapsed.Seconds()))
+				}
+			}
+		}
+	}
 }
 
 type subscriptionReq struct {

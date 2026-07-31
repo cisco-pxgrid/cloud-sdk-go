@@ -1,17 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"flag"
-	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -22,12 +18,6 @@ import (
 )
 
 var logger *log.DefaultLogger = &log.DefaultLogger{Level: log.LogLevelInfo}
-
-// Track active devices
-var (
-	activeDevices = make(map[string]*sdk.Device)
-	deviceMutex   sync.RWMutex
-)
 
 type appConfig struct {
 	Id            string   `yaml:"id"`
@@ -60,42 +50,14 @@ type config struct {
 
 func messageHandler(id string, d *sdk.Device, stream string, p []byte) {
 	logger.Infof("Message received. tenant=%s device=%s stream=%s message=%s\n", d.Tenant().Name(), d.Name(), stream, string(p))
-
-	// Check if this is an echo topic message
-	if stream == "com.cisco.ise.echo" {
-		logger.Infof("Echo message received from topic: %s", string(p))
-	}
 }
 
 func activationHandler(d *sdk.Device) {
 	logger.Infof("Device activation: %v", d)
-
-	// Add device to active devices map
-	deviceMutex.Lock()
-	activeDevices[d.ID()] = d
-	deviceMutex.Unlock()
-
-	// Publish an echo message immediately upon activation
-	message := map[string]interface{}{
-		"timestamp": time.Now().Format(time.RFC3339),
-		"message":   "Device just activated!",
-		"device":    d.Name(),
-		"tenant":    d.Tenant().Name(),
-	}
-	if err := publishEchoMessage(d, message); err != nil {
-		logger.Errorf("Failed to publish echo message on activation: %v", err)
-	} else {
-		logger.Infof("Published echo message to newly activated device: %s", d.Name())
-	}
 }
 
 func deactivationHandler(d *sdk.Device) {
 	logger.Infof("Device deactivation: %v", d)
-
-	// Remove device from active devices map
-	deviceMutex.Lock()
-	delete(activeDevices, d.ID())
-	deviceMutex.Unlock()
 }
 
 func tenantUnlinkedHandler(t *sdk.Tenant) {
@@ -123,30 +85,6 @@ func (c *config) store(file string) error {
 	return os.WriteFile(file, data, 0644)
 }
 
-func publishEchoMessage(device *sdk.Device, message map[string]interface{}) error {
-	payload, err := json.Marshal(message)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, "/pxgrid/echo/publish", bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := device.Query(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	logger.Infof("Echo publish response: status=%s body=%s", resp.Status, string(body))
-
-	return nil
-}
-
 func main() {
 	// Load config
 	configFile := flag.String("config", "", "Configuration yaml file to use (required)")
@@ -154,9 +92,6 @@ func main() {
 	insecure := flag.Bool("insecure", false, "Insecure TLS")
 	group := flag.String("group", "", "Group ID")
 	deleteInstance := flag.Bool("delete", false, "Delete app instance")
-	statusInterval := flag.Duration("status-interval", 30*time.Second, "Read-stream status/summary log interval")
-	gapThreshold := flag.Duration("gap-threshold", 2*time.Minute, "Read-stream no-message gap WARN threshold")
-	logEachMessage := flag.Bool("log-each-message", true, "Log an INFO line for every read-stream message on arrival")
 	flag.Parse()
 	config, err := loadConfig(*configFile)
 	if err != nil {
@@ -207,9 +142,6 @@ func main() {
 		WriteStreamID:             config.App.WriteStream,
 		GroupID:                   *group,
 		Transport:                 t,
-		StatusLogInterval:         *statusInterval,
-		LogEachMessage:            logEachMessage,
-		MessageGapThreshold:       *gapThreshold,
 	}
 	// SDK App create
 	app, err := sdk.New(appConfig)
@@ -264,88 +196,33 @@ func main() {
 		}
 	}
 
-	// SDK get devices and populate active devices map
+	// SDK get devices
 	devices, err := tenant.GetDevices()
 	if err != nil {
 		logger.Errorf("Failed to get devices: %v", err)
 		os.Exit(-1)
 	}
-
-	deviceMutex.Lock()
 	if len(devices) > 0 {
 		for _, d := range devices {
 			logger.Infof("Activated device: %v", d.Name())
-			activeDevices[d.ID()] = &d
 		}
 	} else {
 		logger.Infof("No device found yet")
 	}
-	deviceMutex.Unlock()
 
 	// Catch termination signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Create a ticker to periodically publish echo messages
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	// Publish initial echo message to already activated devices
-	deviceMutex.RLock()
-	if len(activeDevices) > 0 {
-		for _, device := range activeDevices {
-			message := map[string]interface{}{
-				"timestamp": time.Now().Format(time.RFC3339),
-				"message":   "Hello from multi-instance example",
-				"device":    device.Name(),
-				"tenant":    tenant.Name(),
-			}
-			if err := publishEchoMessage(device, message); err != nil {
-				logger.Errorf("Failed to publish echo message: %v", err)
-			} else {
-				logger.Infof("Published echo message to device: %s", device.Name())
-			}
-			break // Only send to first device for now
-		}
-	}
-	deviceMutex.RUnlock()
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Infof("Terminating...")
-			goto cleanup
-		case err := <-appInstance.Error:
-			logger.Errorf("AppInstance error: %v", err)
-			goto cleanup
-		case err := <-app.Error:
-			logger.Errorf("App error: %v", err)
-			goto cleanup
-		case <-ticker.C:
-			// Periodically publish echo messages to all active devices
-			deviceMutex.RLock()
-			if len(activeDevices) > 0 {
-				for _, device := range activeDevices {
-					message := map[string]interface{}{
-						"timestamp": time.Now().Format(time.RFC3339),
-						"message":   "Periodic echo message",
-						"device":    device.Name(),
-						"tenant":    device.Tenant().Name(),
-					}
-					if err := publishEchoMessage(device, message); err != nil {
-						logger.Errorf("Failed to publish periodic echo message: %v", err)
-					} else {
-						logger.Debugf("Published periodic echo message to device: %s", device.Name())
-					}
-				}
-			} else {
-				logger.Debugf("No active devices to send periodic messages")
-			}
-			deviceMutex.RUnlock()
-		}
+	select {
+	case <-ctx.Done():
+		logger.Infof("Terminating...")
+	case err := <-appInstance.Error:
+		logger.Errorf("AppInstance error: %v", err)
+	case err := <-app.Error:
+		logger.Errorf("App error: %v", err)
 	}
 
-cleanup:
 	if err = appInstance.Close(); err != nil {
 		panic(err)
 	}
