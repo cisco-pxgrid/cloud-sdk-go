@@ -510,16 +510,23 @@ func (app *App) dataMsgHandler(region, id string, headers map[string]string, pay
 // the surrounding SDK read-stream processing, so logs can attribute where synchronous progress is
 // blocked.
 func (app *App) invokeDeviceMessageHandler(region, diagnosticMessageID, handlerMessageID string, device *Device, topic string, payload []byte) {
+	app.invokeDeviceMessageHandlerWithPolicy(
+		log.Logger, deviceMessageHandlerSlowWarnThreshold, deviceMessageHandlerReminderInterval,
+		region, diagnosticMessageID, handlerMessageID, device, topic, payload,
+	)
+}
+
+// invokeDeviceMessageHandlerWithPolicy keeps the logger and timing policy immutable for the life of
+// one callback, including its asynchronous watchdog.
+func (app *App) invokeDeviceMessageHandlerWithPolicy(logger log.SDKLogger, threshold, reminderInterval time.Duration, region, diagnosticMessageID, handlerMessageID string, device *Device, topic string, payload []byte) {
 	handler := app.config.DeviceMessageHandler
 	if handler == nil {
 		return
 	}
 
-	threshold := deviceMessageHandlerSlowWarnThreshold
-	reminderInterval := deviceMessageHandlerReminderInterval
 	started := time.Now()
 	watchdog := startDeviceMessageHandlerWatchdog(
-		region, diagnosticMessageID, topic, threshold, reminderInterval, started,
+		logger, region, diagnosticMessageID, topic, threshold, reminderInterval, started,
 	)
 
 	// Preserve the established callback argument while using the protocol message ID for diagnostics.
@@ -527,7 +534,7 @@ func (app *App) invokeDeviceMessageHandler(region, diagnosticMessageID, handlerM
 	elapsed := time.Since(started)
 	watchdog.stop()
 	if threshold > 0 && elapsed >= threshold {
-		log.Logger.Warnf("User DeviceMessageHandler returned after delay. region=%s msgID=%s topic=%s durationSec=%d",
+		logger.Warnf("User DeviceMessageHandler returned after delay. region=%s msgID=%s topic=%s durationSec=%d",
 			region, diagnosticMessageID, topic, int(elapsed.Seconds()))
 	}
 }
@@ -538,7 +545,7 @@ type deviceMessageHandlerWatchdog struct {
 	timer   *time.Timer
 }
 
-func startDeviceMessageHandlerWatchdog(region, messageID, topic string, threshold, reminderInterval time.Duration, started time.Time) *deviceMessageHandlerWatchdog {
+func startDeviceMessageHandlerWatchdog(logger log.SDKLogger, region, messageID, topic string, threshold, reminderInterval time.Duration, started time.Time) *deviceMessageHandlerWatchdog {
 	if threshold <= 0 {
 		return nil
 	}
@@ -549,7 +556,7 @@ func startDeviceMessageHandlerWatchdog(region, messageID, topic string, threshol
 	}
 	watchdog.timer = time.AfterFunc(threshold, func() {
 		defer close(watchdog.stopped)
-		watchDeviceMessageHandler(watchdog.done, region, messageID, topic, reminderInterval, started)
+		watchDeviceMessageHandler(logger, watchdog.done, region, messageID, topic, reminderInterval, started)
 	})
 	return watchdog
 }
@@ -564,13 +571,13 @@ func (w *deviceMessageHandlerWatchdog) stop() {
 	}
 }
 
-func watchDeviceMessageHandler(done <-chan struct{}, region, messageID, topic string, reminderInterval time.Duration, started time.Time) {
+func watchDeviceMessageHandler(logger log.SDKLogger, done <-chan struct{}, region, messageID, topic string, reminderInterval time.Duration, started time.Time) {
 	select {
 	case <-done:
 		return
 	default:
 	}
-	log.Logger.Warnf("User DeviceMessageHandler slow/blocked. region=%s msgID=%s topic=%s elapsedSec=%d",
+	logger.Warnf("User DeviceMessageHandler slow/blocked. region=%s msgID=%s topic=%s elapsedSec=%d",
 		region, messageID, topic, int(time.Since(started).Seconds()))
 
 	if reminderInterval <= 0 {
@@ -584,7 +591,7 @@ func watchDeviceMessageHandler(done <-chan struct{}, region, messageID, topic st
 		case <-done:
 			return
 		case <-ticker.C:
-			log.Logger.Warnf("User DeviceMessageHandler still blocked. region=%s msgID=%s topic=%s elapsedSec=%d",
+			logger.Warnf("User DeviceMessageHandler still blocked. region=%s msgID=%s topic=%s elapsedSec=%d",
 				region, messageID, topic, int(time.Since(started).Seconds()))
 		}
 	}

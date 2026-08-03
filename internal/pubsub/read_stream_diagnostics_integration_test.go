@@ -30,12 +30,11 @@ func startStatusLoggerHarness(t *testing.T, stats *connStats, gapThreshold time.
 			stats:               stats,
 		},
 		conn:          &internalConnection{closed: make(chan struct{})},
-		ctx:           ctx,
 		subscriptions: params,
 	}
 	done := make(chan struct{})
 	go func() {
-		connection.statusLogger()
+		connection.statusLogger(ctx)
 		close(done)
 	}()
 	stop := func() {
@@ -80,7 +79,7 @@ func TestStatusLoggerClassifiesEmptyFrozenCursorAsBrokerQuiet(t *testing.T) {
 	require.Eventually(t, func() bool { return captured.infoContains("state=awaiting_activity") }, time.Second, 2*time.Millisecond)
 	stats.recordBrokerResponse("stream-a", "frozen-context", 0)
 	require.Eventually(t, func() bool {
-		return logLineContainsAll(captured.snap(captured.info), "Read-stream summary", "state=broker_quiet", "consumeIters=1", "received=0", "cursorChanges=0")
+		return logLineContainsAll(captured.infoSnapshot(), "Read-stream summary", "state=broker_quiet", "consumeIters=1", "received=0", "cursorChanges=0")
 	}, time.Second, 2*time.Millisecond)
 	require.False(t, captured.warnContains("state=consumer_stalled"), "valid empty responses must not warn")
 }
@@ -101,7 +100,7 @@ func TestStatusLoggerWarnsOnceWhenBrokerResponsesStop(t *testing.T) {
 
 	require.Eventually(t, func() bool { return captured.warnContains("state=consumer_stalled") }, time.Second, 2*time.Millisecond)
 	time.Sleep(20 * time.Millisecond)
-	require.Equal(t, 1, len(captured.snap(captured.warn)), "unchanged stalled state must not warn every interval")
+	require.Equal(t, 1, len(captured.warnSnapshot()), "unchanged stalled state must not warn every interval")
 }
 
 func TestConsumeTimeoutReconnectEmitsCompleteDiagnosticSequence(t *testing.T) {

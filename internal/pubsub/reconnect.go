@@ -31,7 +31,22 @@ func decodeConsumeOffset(consumeCtx, stream string) (partition, offset int64, ok
 	if consumeCtx == "" {
 		return 0, 0, false
 	}
-	raw, err := base64.StdEncoding.DecodeString(consumeCtx)
+	var raw []byte
+	var err error
+	// Standard padded Base64 is the format currently emitted by the broker. Accept raw and
+	// URL-safe variants defensively because this decoding only enriches diagnostics; the opaque
+	// consume context passed back to the broker is never modified.
+	for _, encoding := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		raw, err = encoding.DecodeString(consumeCtx)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return 0, 0, false
 	}
@@ -54,13 +69,15 @@ type Connection struct {
 	// mu protects the internal connection pointer and subscription registry from the diagnostic
 	// status goroutine. Network operations use snapshots so logging never holds this lock while
 	// waiting on I/O.
-	mu            sync.RWMutex
-	conn          *internalConnection
-	reconnecting  bool
-	Error         chan error
-	ctx           context.Context
-	ctxCancel     context.CancelFunc
-	subscriptions map[string]subscriptionParams
+	mu           sync.RWMutex
+	conn         *internalConnection
+	reconnecting bool
+	Error        chan error
+	ctxCancel    context.CancelFunc
+	// lifecycleGeneration lets a concurrent Disconnect win over an in-flight Connect without
+	// holding mu across network I/O. It does not change the established reconnect policy.
+	lifecycleGeneration uint64
+	subscriptions       map[string]subscriptionParams
 }
 
 type subscriptionParams struct {
@@ -105,19 +122,27 @@ func (c *Connection) String() string {
 
 // Connect establishes a connection to the DxHub PubSub server.
 func (c *Connection) Connect(connectCtx context.Context) error {
-	if err := c.connectionSnapshot().connect(connectCtx); err != nil {
+	generation := c.lifecycleGenerationSnapshot()
+	conn := c.connectionSnapshot()
+	if err := conn.connect(connectCtx); err != nil {
 		return err
 	}
-	c.ctx, c.ctxCancel = context.WithCancel(context.Background())
-	go c.errorHandler()
-	go c.statusLogger()
+	ctx, cancel := context.WithCancel(context.Background())
+	if !c.activateLifecycle(generation, cancel) {
+		cancel()
+		conn.disconnect()
+		return context.Canceled
+	}
+	go c.errorHandler(ctx)
+	go c.statusLogger(ctx)
 	return nil
 }
 
 // Disconnect disconnects the connection to the DxHub PubSub server.
 func (c *Connection) Disconnect() {
-	if c.ctx != nil {
-		c.ctxCancel()
+	cancel := c.cancelLifecycle()
+	if cancel != nil {
+		cancel()
 	}
 	if conn := c.connectionSnapshot(); conn != nil {
 		conn.disconnect()
@@ -172,7 +197,7 @@ func (c *Connection) PublishAsync(stream string, headers map[string]string, payl
 
 // errorHandler waits for error and puts it in the error channel.
 // If there is message drop, ConsumeTimeout will be true, it reconnects and resubscribes.
-func (c *Connection) errorHandler() {
+func (c *Connection) errorHandler(ctx context.Context) {
 	var err error
 	defer func() {
 		// Always push the err, even if it is nil
@@ -219,10 +244,39 @@ func (c *Connection) errorHandler() {
 				c.config.Domain, c.config.GroupID, len(subscriptions),
 				time.Since(reconnectStart).Milliseconds(), c.config.stats.reconnectSnapshot())
 			c.setReconnecting(false)
-		case <-c.ctx.Done():
+		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+func (c *Connection) lifecycleGenerationSnapshot() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lifecycleGeneration
+}
+
+// activateLifecycle publishes the cancel function only if Disconnect has not occurred while
+// the network connection was being established.
+func (c *Connection) activateLifecycle(generation uint64, cancel context.CancelFunc) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lifecycleGeneration != generation {
+		return false
+	}
+	c.ctxCancel = cancel
+	return true
+}
+
+// cancelLifecycle invalidates an in-flight Connect and returns the active cancel function. The
+// function is invoked by the caller after releasing mu so cancellation cannot run under the lock.
+func (c *Connection) cancelLifecycle() context.CancelFunc {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lifecycleGeneration++
+	cancel := c.ctxCancel
+	c.ctxCancel = nil
+	return cancel
 }
 
 func (c *Connection) connectionSnapshot() *internalConnection {
@@ -348,7 +402,7 @@ func diagnosticStateWarns(state streamDiagnosticState) bool {
 // statusLogger periodically emits non-destructive interval deltas, cumulative totals, and an
 // evidence-based state for each read stream. State changes are logged once; a quiet broker is INFO
 // only, while a consumer stall is WARN. This function does not alter connection behavior.
-func (c *Connection) statusLogger() {
+func (c *Connection) statusLogger(ctx context.Context) {
 	interval := c.config.StatusLogInterval
 	if interval <= 0 {
 		interval = defaultStatusLogInterval
@@ -428,7 +482,7 @@ func (c *Connection) statusLogger() {
 			}
 			log.Logger.Infof("Read-stream status. region=%s groupId=%s disconnected=%t connectedForSec=%d reconnectCount=%d streams=[%s]",
 				c.config.Domain, c.config.GroupID, disconnected, connectedFor, snapshot.reconnectCount, streams)
-		case <-c.ctx.Done():
+		case <-ctx.Done():
 			return
 		}
 	}

@@ -4,12 +4,14 @@
 package pubsub
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/cisco-pxgrid/cloud-sdk-go/internal/rpc"
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 	"github.com/stretchr/testify/require"
 )
@@ -53,14 +55,30 @@ func (c *captureLogger) Debugf(format string, args ...interface{}) {
 	c.events = append(c.events, line)
 }
 
-func (c *captureLogger) infoContains(sub string) bool { return anyContains(c.snap(c.info), sub) }
-func (c *captureLogger) warnContains(sub string) bool { return anyContains(c.snap(c.warn), sub) }
+func (c *captureLogger) infoContains(sub string) bool { return anyContains(c.infoSnapshot(), sub) }
+func (c *captureLogger) warnContains(sub string) bool { return anyContains(c.warnSnapshot(), sub) }
 
-func (c *captureLogger) snap(lines []string) []string {
+func (c *captureLogger) infoSnapshot() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := make([]string, len(lines))
-	copy(out, lines)
+	out := make([]string, len(c.info))
+	copy(out, c.info)
+	return out
+}
+
+func (c *captureLogger) warnSnapshot() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, len(c.warn))
+	copy(out, c.warn)
+	return out
+}
+
+func (c *captureLogger) eventsSnapshot() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, len(c.events))
+	copy(out, c.events)
 	return out
 }
 
@@ -84,7 +102,7 @@ func countContains(lines []string, fragment string) int {
 }
 
 func (c *captureLogger) eventsInOrder(fragments ...string) bool {
-	events := c.snap(c.events)
+	events := c.eventsSnapshot()
 	next := 0
 	for _, event := range events {
 		if strings.Contains(event, fragments[next]) {
@@ -224,23 +242,45 @@ func TestPerMessageLogging_Toggle(t *testing.T) {
 	cl := &captureLogger{}
 	log.Logger = cl
 
-	// Emulate the per-message log line the subscriber emits when LogEachMessage is true.
-	cfg := Config{LogEachMessage: true, Domain: "example.com", stats: newConnStats()}
-	if cfg.LogEachMessage {
-		log.Logger.Infof("Read-stream message received. region=%s stream=%s topic=%s msgID=%s type=%s tenant=%s device=%s bytes=%d subID=%s consumeCtx=%s decodeErr=%v",
-			cfg.Domain, "app--x-R", "pxcloud--session-sessions", "mid-1", "data", "t1", "d1", 42, "sub-1", "ctx-1", nil)
+	const consumeCtx = "eyJzdHJlYW1zIjpbeyJzdHJlYW0iOiJhcHAtLXgtUiIsInBhcnRpdGlvbiI6MSwib2Zmc2V0Ijo2MjAyfV19"
+	connection := &internalConnection{config: Config{LogEachMessage: true, Domain: "example.com", stats: newConnStats()}}
+	sub := &subscription{
+		stream: "app--x-R",
+		id:     "sub-1",
+		callback: func(err error, id string, _ map[string]string, payload []byte) {
+			require.NoError(t, err)
+			require.Equal(t, "mid-1", id)
+			require.Equal(t, []byte("payload"), payload)
+		},
 	}
+	result := &rpc.ConsumeResult{
+		ConsumeContext: consumeCtx,
+		Messages: map[string][]rpc.ConsumeMessage{
+			"app--x-R": {{
+				MsgID:   "mid-1",
+				Payload: base64.StdEncoding.EncodeToString([]byte("payload")),
+				Headers: map[string]string{
+					"stream":      "pxcloud--session-sessions",
+					"messageType": "data",
+					"tenant":      "t1",
+					"device":      "d1",
+				},
+			}},
+		},
+	}
+	connection.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
 	require.True(t, cl.infoContains("Read-stream message received."))
 	require.True(t, cl.infoContains("topic=pxcloud--session-sessions"))
 	require.True(t, cl.infoContains("subID=sub-1"))
+	require.True(t, cl.infoContains("partition=1"))
+	require.True(t, cl.infoContains("offset=6202"))
+	require.True(t, cl.infoContains("consumeCtx="+consumeCtx))
 
-	// When disabled, nothing new is emitted.
-	before := len(cl.snap(cl.info))
-	cfg.LogEachMessage = false
-	if cfg.LogEachMessage {
-		log.Logger.Infof("should not happen")
-	}
-	require.Equal(t, before, len(cl.snap(cl.info)))
+	// The same production dispatch path emits no arrival line when the toggle is disabled.
+	before := len(cl.infoSnapshot())
+	connection.config.LogEachMessage = false
+	connection.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
+	require.Equal(t, before, len(cl.infoSnapshot()))
 }
 
 func TestClassifyStream_DistinguishesQuietStallAndBlockedCallback(t *testing.T) {
@@ -323,15 +363,29 @@ func TestDiagnosticStateTransitionsAreNotRepeated(t *testing.T) {
 }
 
 func TestDecodeConsumeOffset(t *testing.T) {
-	// {"streams":[{"stream":"app--x-R","partition":1,"offset":6202}]}
-	const ctx = "eyJzdHJlYW1zIjpbeyJzdHJlYW0iOiJhcHAtLXgtUiIsInBhcnRpdGlvbiI6MSwib2Zmc2V0Ijo2MjAyfV19"
-	p, o, ok := decodeConsumeOffset(ctx, "app--x-R")
-	require.True(t, ok)
-	require.Equal(t, int64(1), p)
-	require.Equal(t, int64(6202), o)
+	// The Unicode stream makes the encoded cursor contain both an alphabet-sensitive character
+	// ('+' for standard, '-' for URL-safe) and padding, so all four variants are exercised.
+	const stream = "a࠾"
+	const cursor = `{"streams":[{"stream":"a࠾","partition":1,"offset":6202}]}`
+	encodings := map[string]*base64.Encoding{
+		"standard padded": base64.StdEncoding,
+		"standard raw":    base64.RawStdEncoding,
+		"URL-safe padded": base64.URLEncoding,
+		"URL-safe raw":    base64.RawURLEncoding,
+	}
+	for name, encoding := range encodings {
+		t.Run(name, func(t *testing.T) {
+			p, o, ok := decodeConsumeOffset(encoding.EncodeToString([]byte(cursor)), stream)
+			require.True(t, ok)
+			require.Equal(t, int64(1), p)
+			require.Equal(t, int64(6202), o)
+		})
+	}
+
+	ctx := base64.StdEncoding.EncodeToString([]byte(cursor))
 
 	// Stream not present in the cursor.
-	_, _, ok = decodeConsumeOffset(ctx, "app--other-R")
+	_, _, ok := decodeConsumeOffset(ctx, "app--other-R")
 	require.False(t, ok)
 
 	// Empty cursor ({"streams":[]}) yields no match.
@@ -347,18 +401,14 @@ func TestDecodeConsumeOffset(t *testing.T) {
 
 func TestCallbackWatchdogLogsBlockedCallback(t *testing.T) {
 	originalLogger := log.Logger
-	originalThreshold := sdkProcessingSlowWarnThreshold
-	originalInterval := sdkProcessingWatchInterval
 	defer func() {
 		log.Logger = originalLogger
-		sdkProcessingSlowWarnThreshold = originalThreshold
-		sdkProcessingWatchInterval = originalInterval
 	}()
 
 	captured := &captureLogger{}
 	log.Logger = captured
-	sdkProcessingSlowWarnThreshold = 5 * time.Millisecond
-	sdkProcessingWatchInterval = 5 * time.Millisecond
+	threshold := 5 * time.Millisecond
+	interval := 5 * time.Millisecond
 
 	connection := &internalConnection{config: Config{Domain: "example.com"}}
 	sub := &subscription{stream: "app--x-R", id: "sub-1"}
@@ -367,7 +417,7 @@ func TestCallbackWatchdogLogsBlockedCallback(t *testing.T) {
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
-		connection.sdkProcessingWatchdog(sub, watch, done, sdkProcessingSlowWarnThreshold, sdkProcessingWatchInterval)
+		connection.sdkProcessingWatchdog(sub, watch, done, threshold, interval)
 	}()
 
 	watch.begin("mid-1", "pxcloud--session-sessions")
@@ -379,7 +429,7 @@ func TestCallbackWatchdogLogsBlockedCallback(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return captured.warnContains("SDK read-stream processing still blocked")
 	}, time.Second, 5*time.Millisecond)
-	require.Equal(t, 1, countContains(captured.snap(captured.warn), "SDK read-stream processing slow/blocked"))
+	require.Equal(t, 1, countContains(captured.warnSnapshot(), "SDK read-stream processing slow/blocked"))
 	watch.end()
 	close(done)
 	<-stopped

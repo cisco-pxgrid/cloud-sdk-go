@@ -84,3 +84,34 @@ func TestDiagnosticSnapshotsDuringSubscriptionChanges(t *testing.T) {
 	}
 	require.Empty(t, connection.subscriptionSnapshot())
 }
+
+func TestDisconnectInvalidatesInFlightConnectLifecycle(t *testing.T) {
+	connection := &Connection{}
+	generation := connection.lifecycleGenerationSnapshot()
+
+	// Simulate Disconnect occurring while Connect is doing network I/O.
+	require.Nil(t, connection.cancelLifecycle())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	require.False(t, connection.activateLifecycle(generation, cancel),
+		"an in-flight Connect must not publish a lifecycle after Disconnect")
+
+	// A later lifecycle can still be activated and canceled normally.
+	nextGeneration := connection.lifecycleGenerationSnapshot()
+	nextCtx, nextCancel := context.WithCancel(context.Background())
+	require.True(t, connection.activateLifecycle(nextGeneration, nextCancel))
+	activeCancel := connection.cancelLifecycle()
+	require.NotNil(t, activeCancel)
+	activeCancel()
+	select {
+	case <-nextCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("active lifecycle was not canceled")
+	}
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("rejected lifecycle should only be canceled by its Connect caller")
+	default:
+	}
+}

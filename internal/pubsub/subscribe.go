@@ -236,36 +236,7 @@ func (c *internalConnection) subscriber(sub *subscription) {
 	}()
 
 	for res := range resultCh {
-		for stream, messages := range res.Messages {
-			if stream != sub.stream {
-				log.Logger.Errorf("Received consume message for stream %s, was expecting messages for stream %s", stream, sub.stream)
-				continue
-			}
-			for _, m := range messages {
-				c.config.stats.recordDispatch(sub.stream)
-				payload, decodeErr := base64.StdEncoding.DecodeString(m.Payload)
-				if c.config.LogEachMessage {
-					partition, offset := int64(-1), int64(-1)
-					if p, o, ok := decodeConsumeOffset(res.ConsumeContext, sub.stream); ok {
-						partition, offset = p, o
-					}
-					log.Logger.Infof("Read-stream message received. region=%s stream=%s topic=%s msgID=%s type=%s tenant=%s device=%s bytes=%d subID=%s partition=%d offset=%d consumeCtx=%s decodeErr=%v",
-						c.config.Domain, sub.stream, m.Headers["stream"], m.MsgID, m.Headers["messageType"],
-						m.Headers["tenant"], m.Headers["device"], len(payload), sub.id, partition, offset, res.ConsumeContext, decodeErr)
-				}
-				topic := m.Headers["stream"]
-				watch.begin(m.MsgID, topic)
-				c.config.stats.recordSDKProcessingStart(sub.stream, m.MsgID, topic)
-				cbStart := time.Now()
-				sub.callback(decodeErr, m.MsgID, m.Headers, payload)
-				watch.end()
-				c.config.stats.recordSDKProcessingComplete(sub.stream)
-				if d := time.Since(cbStart); watchThreshold > 0 && d >= watchThreshold {
-					log.Logger.Warnf("SDK read-stream processing returned after delay. region=%s stream=%s subID=%s msgID=%s topic=%s durationSec=%d",
-						c.config.Domain, sub.stream, sub.id, m.MsgID, topic, int(d.Seconds()))
-				}
-			}
-		}
+		c.dispatchConsumeResult(sub, res, watch, watchThreshold)
 	}
 	if err != nil {
 		if err == errConsumeTimeout {
@@ -281,6 +252,42 @@ func (c *internalConnection) subscriber(sub *subscription) {
 	}
 
 	log.Logger.Debugf("Stopped subscriber thread for %s", sub.stream)
+}
+
+// dispatchConsumeResult is the production subscriber dispatch path for one broker response. Keeping
+// the per-message log at this boundary lets tests verify the real toggle and field set without
+// duplicating its format string.
+func (c *internalConnection) dispatchConsumeResult(sub *subscription, res *rpc.ConsumeResult, watch *sdkProcessingWatch, watchThreshold time.Duration) {
+	for stream, messages := range res.Messages {
+		if stream != sub.stream {
+			log.Logger.Errorf("Received consume message for stream %s, was expecting messages for stream %s", stream, sub.stream)
+			continue
+		}
+		for _, m := range messages {
+			c.config.stats.recordDispatch(sub.stream)
+			payload, decodeErr := base64.StdEncoding.DecodeString(m.Payload)
+			if c.config.LogEachMessage {
+				partition, offset := int64(-1), int64(-1)
+				if p, o, ok := decodeConsumeOffset(res.ConsumeContext, sub.stream); ok {
+					partition, offset = p, o
+				}
+				log.Logger.Infof("Read-stream message received. region=%s stream=%s topic=%s msgID=%s type=%s tenant=%s device=%s bytes=%d subID=%s partition=%d offset=%d consumeCtx=%s decodeErr=%v",
+					c.config.Domain, sub.stream, m.Headers["stream"], m.MsgID, m.Headers["messageType"],
+					m.Headers["tenant"], m.Headers["device"], len(payload), sub.id, partition, offset, res.ConsumeContext, decodeErr)
+			}
+			topic := m.Headers["stream"]
+			watch.begin(m.MsgID, topic)
+			c.config.stats.recordSDKProcessingStart(sub.stream, m.MsgID, topic)
+			cbStart := time.Now()
+			sub.callback(decodeErr, m.MsgID, m.Headers, payload)
+			watch.end()
+			c.config.stats.recordSDKProcessingComplete(sub.stream)
+			if d := time.Since(cbStart); watchThreshold > 0 && d >= watchThreshold {
+				log.Logger.Warnf("SDK read-stream processing returned after delay. region=%s stream=%s subID=%s msgID=%s topic=%s durationSec=%d",
+					c.config.Domain, sub.stream, sub.id, m.MsgID, topic, int(d.Seconds()))
+			}
+		}
+	}
 }
 
 // sdkProcessingWatch tracks currently in-flight SDK subscription processing. The mutex is held

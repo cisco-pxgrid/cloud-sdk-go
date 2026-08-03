@@ -14,7 +14,6 @@ import (
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub/test"
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/rpc"
-	"github.com/cisco-pxgrid/cloud-sdk-go/log"
 	"github.com/cisco-pxgrid/websocket"
 	"github.com/stretchr/testify/require"
 )
@@ -74,19 +73,7 @@ func TestLogEachMessageDefaultsToDisabled(t *testing.T) {
 }
 
 func TestDeviceMessageHandlerDiagnosticsAttributeUserCallback(t *testing.T) {
-	originalLogger := log.Logger
-	originalThreshold := deviceMessageHandlerSlowWarnThreshold
-	originalReminder := deviceMessageHandlerReminderInterval
-	defer func() {
-		log.Logger = originalLogger
-		deviceMessageHandlerSlowWarnThreshold = originalThreshold
-		deviceMessageHandlerReminderInterval = originalReminder
-	}()
-
 	captured := &appCaptureLogger{}
-	log.Logger = captured
-	deviceMessageHandlerSlowWarnThreshold = 10 * time.Millisecond
-	deviceMessageHandlerReminderInterval = 10 * time.Millisecond
 
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -98,7 +85,8 @@ func TestDeviceMessageHandlerDiagnosticsAttributeUserCallback(t *testing.T) {
 		<-release
 	}}}
 	go func() {
-		app.invokeDeviceMessageHandler("us.example.com", "mid-1", "handler-mid-1", &Device{}, "pxcloud--session-sessions", []byte("payload"))
+		app.invokeDeviceMessageHandlerWithPolicy(captured, 10*time.Millisecond, 10*time.Millisecond,
+			"us.example.com", "mid-1", "handler-mid-1", &Device{}, "pxcloud--session-sessions", []byte("payload"))
 		close(returned)
 	}()
 
@@ -121,22 +109,11 @@ func TestDeviceMessageHandlerDiagnosticsAttributeUserCallback(t *testing.T) {
 }
 
 func TestDeviceMessageHandlerDiagnosticsFastCallbackDoesNotStartWatchdog(t *testing.T) {
-	originalLogger := log.Logger
-	originalThreshold := deviceMessageHandlerSlowWarnThreshold
-	originalReminder := deviceMessageHandlerReminderInterval
-	defer func() {
-		log.Logger = originalLogger
-		deviceMessageHandlerSlowWarnThreshold = originalThreshold
-		deviceMessageHandlerReminderInterval = originalReminder
-	}()
-
 	captured := &appCaptureLogger{}
-	log.Logger = captured
-	deviceMessageHandlerSlowWarnThreshold = time.Second
-	deviceMessageHandlerReminderInterval = time.Second
 
 	app := &App{config: Config{DeviceMessageHandler: func(string, *Device, string, []byte) {}}}
-	app.invokeDeviceMessageHandler("us.example.com", "mid-fast", "handler-mid-fast", &Device{}, "pxcloud--session-sessions", []byte("payload"))
+	app.invokeDeviceMessageHandlerWithPolicy(captured, time.Second, time.Second,
+		"us.example.com", "mid-fast", "handler-mid-fast", &Device{}, "pxcloud--session-sessions", []byte("payload"))
 
 	require.False(t, captured.warningContains("mid-fast"))
 }
