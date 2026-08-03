@@ -1,0 +1,46 @@
+internal/pubsub/connection_diagnostics_concurrency_test.go
+  s_ccb708a419bf66::t_5ecda138191908 87-117
+internal/pubsub/read_stream_diagnostics_integration_test.go
+  s_ccb708a419bf66::t_b47082bdcd5545 37
+  s_ccb708a419bf66::t_f89546c1067e73 82,103
+internal/pubsub/subscribe.go
+  s_ccb708a419bf66::t_7847634f752eff 239,257-290
+  s_ccb708a419bf66::t_771e29a7985201 291-292
+internal/pubsub/reconnect.go
+  s_ccb708a419bf66::t_9de9008db52873 259
+  s_ccb708a419bf66::t_b47082bdcd5545 77-79,125-127,130,132-137,143-145,200,247,253-258,260,262-281,405,485
+  s_ccb708a419bf66::t_577b38d4f467a0 34-49
+  s_ccb708a419bf66::t_31605e7e93c5b9 72-76,80,131,261
+app_test.go
+  s_ccb708a419bf66::t_18354add1981fe 88-89,115-116
+app.go
+  s_ccb708a419bf66::t_cf760454683524 520
+  s_ccb708a419bf66::t_18354add1981fe 513-519,521,529,537,548,559,574,580,594
+internal/pubsub/connstats_test.go
+  s_ccb708a419bf66::t_7847634f752eff 7,14,245-269,271,275-279,281-282,410-411,420
+  s_ccb708a419bf66::t_f89546c1067e73 58-59,61,64-81,105,280,283,432
+  s_ccb708a419bf66::t_577b38d4f467a0 370-377,379-385
+  s_ccb708a419bf66::t_cf760454683524 366-369,378
+  s_ccb708a419bf66::t_e370b2268cea7b 388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "d5f6ae83d3d376e5d5c2fe9769718248f58255d9",
+  "prompts": {},
+  "humans": {
+    "h_28c5b11db43a13": {
+      "author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  },
+  "sessions": {
+    "s_ccb708a419bf66": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f897c-ac6f-7681-bf93-89503aefb5c2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "KAMALRAJ MADHURAKASAN -X (kmadhura - HCL TECHNOLOGIES LIMITED at Cisco) <kmadhura@cisco.com>"
+    }
+  }
+}
