@@ -122,3 +122,36 @@ func TestDisconnectCancelsInFlightConnectAttempt(t *testing.T) {
 		t.Fatal("active lifecycle was not canceled")
 	}
 }
+
+func TestDisconnectWaitsForStatusLoggerCompletion(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	statusLoggerDone := make(chan struct{})
+	connection := &Connection{
+		ctxCancel:        cancel,
+		statusLoggerDone: statusLoggerDone,
+	}
+
+	disconnectDone := make(chan struct{})
+	go func() {
+		connection.Disconnect()
+		close(disconnectDone)
+	}()
+
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("status logger context was not canceled")
+	}
+	select {
+	case <-disconnectDone:
+		t.Fatal("disconnect returned before the status logger completed")
+	default:
+	}
+
+	close(statusLoggerDone)
+	select {
+	case <-disconnectDone:
+	case <-time.After(time.Second):
+		t.Fatal("disconnect did not return after the status logger completed")
+	}
+}

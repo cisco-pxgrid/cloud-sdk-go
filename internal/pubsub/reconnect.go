@@ -26,6 +26,7 @@ type Connection struct {
 	Error                chan error
 	attemptConnectCancel context.CancelFunc
 	ctxCancel            context.CancelFunc
+	statusLoggerDone     chan struct{}
 	subscriptions        map[string]subscriptionParams
 }
 
@@ -92,11 +93,16 @@ func (c *Connection) Connect(connectCtx context.Context) error {
 		return attemptErr
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	statusLoggerDone := make(chan struct{})
 	c.mu.Lock()
 	c.ctxCancel = cancel
+	c.statusLoggerDone = statusLoggerDone
 	c.mu.Unlock()
 	go c.errorHandler(ctx)
-	go c.statusLogger(ctx)
+	go func() {
+		defer close(statusLoggerDone)
+		c.statusLogger(ctx)
+	}()
 	return nil
 }
 
@@ -116,10 +122,17 @@ func (c *Connection) Disconnect() {
 	c.mu.Lock()
 	cancel := c.ctxCancel
 	c.ctxCancel = nil
+	statusLoggerDone := c.statusLoggerDone
+	c.statusLoggerDone = nil
 	conn := c.conn
 	c.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	// The status logger owns the final diagnostic snapshot. Join it before disconnect tears down
+	// subscriptions and their active stream evidence, and before reporting lifecycle completion.
+	if statusLoggerDone != nil {
+		<-statusLoggerDone
 	}
 	if conn != nil {
 		conn.disconnect()

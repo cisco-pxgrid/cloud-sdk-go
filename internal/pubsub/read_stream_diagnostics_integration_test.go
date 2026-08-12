@@ -128,4 +128,12 @@ func TestConsumeTimeoutReconnectEmitsCompleteDiagnosticSequence(t *testing.T) {
 		)
 	}, 3*time.Second, 5*time.Millisecond)
 	require.GreaterOrEqual(t, connections.Load(), int32(2))
+
+	beforeDisconnect := len(captured.infoSnapshot())
+	connection.Disconnect()
+	shutdownLogs := captured.infoSnapshot()[beforeDisconnect:]
+	require.True(t, logLineContainsAll(shutdownLogs, "Read-stream status logger stopped."))
+	require.True(t, logLineContainsAll(shutdownLogs,
+		"Read-stream summary", "stream=reconnect-stream", "sdkProcessingActive=false"),
+		"disconnect must wait for a final per-stream snapshot before stream teardown")
 }
