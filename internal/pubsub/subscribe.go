@@ -31,15 +31,6 @@ var resultProcessingTimeout = 60 * time.Second
 var inactivityMessageLogDuration = 10 * time.Minute
 var errConsumeTimeout = errors.New("consume timeout")
 
-// sdkProcessingSlowWarnThreshold is how long the synchronous SDK subscription callback may run
-// before the pub/sub layer logs a warning. The actual user DeviceMessageHandler is timed separately
-// in app.go.
-var sdkProcessingSlowWarnThreshold = 10 * time.Second
-
-// sdkProcessingWatchInterval is how often the watchdog checks in-flight SDK processing and repeats
-// the warning while it remains blocked.
-var sdkProcessingWatchInterval = 15 * time.Second
-
 // subscribe subscribes to a DxHub Pubsub Stream
 func (c *internalConnection) subscribe(stream string, subscriptionID string, handler SubscriptionCallback) (string, error) {
 	c.subs.Lock()
@@ -224,14 +215,14 @@ func (c *internalConnection) subscriber(sub *subscription) {
 	watch := &sdkProcessingWatch{}
 	watchThreshold := sdkProcessingSlowWarnThreshold
 	watchInterval := sdkProcessingWatchInterval
-	watchdogDone := make(chan struct{})
+	watchdogCtx, cancelWatchdog := context.WithCancel(sub.ctx)
 	watchdogStopped := make(chan struct{})
 	go func() {
 		defer close(watchdogStopped)
-		c.sdkProcessingWatchdog(sub, watch, watchdogDone, watchThreshold, watchInterval)
+		runSDKProcessingWatchdog(watchdogCtx, log.Logger, c.config.Domain, sub.stream, sub.id, watch, watchThreshold, watchInterval)
 	}()
 	defer func() {
-		close(watchdogDone)
+		cancelWatchdog()
 		<-watchdogStopped
 	}()
 
@@ -285,85 +276,6 @@ func (c *internalConnection) dispatchConsumeResult(sub *subscription, res *rpc.C
 			if d := time.Since(cbStart); watchThreshold > 0 && d >= watchThreshold {
 				log.Logger.Warnf("SDK read-stream processing returned after delay. region=%s stream=%s subID=%s msgID=%s topic=%s durationSec=%d",
 					c.config.Domain, sub.stream, sub.id, m.MsgID, topic, int(d.Seconds()))
-			}
-		}
-	}
-}
-
-// sdkProcessingWatch tracks currently in-flight SDK subscription processing. The mutex is held
-// only around the small begin/end/read operations, never during the callback itself.
-type sdkProcessingWatch struct {
-	mu          sync.Mutex
-	start       time.Time
-	lastWarning time.Time
-	msgID       string
-	topic       string
-}
-
-// begin records that a callback for msgID/topic has started.
-func (w *sdkProcessingWatch) begin(msgID, topic string) {
-	w.mu.Lock()
-	w.start = time.Now()
-	w.lastWarning = time.Time{}
-	w.msgID = msgID
-	w.topic = topic
-	w.mu.Unlock()
-}
-
-// end clears the in-flight marker once the callback returns.
-func (w *sdkProcessingWatch) end() {
-	w.mu.Lock()
-	w.start = time.Time{}
-	w.lastWarning = time.Time{}
-	w.mu.Unlock()
-}
-
-func (w *sdkProcessingWatch) warningDue(now time.Time, threshold, reminderInterval time.Duration) (elapsed time.Duration, msgID, topic string, initial, due bool) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.start.IsZero() || threshold <= 0 {
-		return 0, "", "", false, false
-	}
-	elapsed = now.Sub(w.start)
-	if elapsed < threshold {
-		return 0, "", "", false, false
-	}
-	initial = w.lastWarning.IsZero()
-	if !initial && (reminderInterval <= 0 || now.Sub(w.lastWarning) < reminderInterval) {
-		return 0, "", "", false, false
-	}
-	w.lastWarning = now
-	return elapsed, w.msgID, w.topic, initial, true
-}
-
-// sdkProcessingWatchdog reports SDK subscription processing that exceeds the fixed threshold. It
-// repeats at the configured fixed reminder interval and does not change processing or recovery.
-func (c *internalConnection) sdkProcessingWatchdog(sub *subscription, watch *sdkProcessingWatch, done <-chan struct{}, threshold, reminderInterval time.Duration) {
-	checkInterval := time.Second
-	if threshold > 0 && threshold < checkInterval {
-		checkInterval = threshold
-	}
-	if reminderInterval > 0 && reminderInterval < checkInterval {
-		checkInterval = reminderInterval
-	}
-	if checkInterval <= 0 {
-		checkInterval = time.Second
-	}
-	ticker := time.NewTicker(checkInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-done:
-			return
-		case now := <-ticker.C:
-			if elapsed, msgID, topic, initial, due := watch.warningDue(now, threshold, reminderInterval); due {
-				if initial {
-					log.Logger.Warnf("SDK read-stream processing slow/blocked; subscriber cannot consume until it returns. region=%s stream=%s subID=%s msgID=%s topic=%s elapsedSec=%d",
-						c.config.Domain, sub.stream, sub.id, msgID, topic, int(elapsed.Seconds()))
-				} else {
-					log.Logger.Warnf("SDK read-stream processing still blocked; subscriber cannot consume until it returns. region=%s stream=%s subID=%s msgID=%s topic=%s elapsedSec=%d",
-						c.config.Domain, sub.stream, sub.id, msgID, topic, int(elapsed.Seconds()))
-				}
 			}
 		}
 	}

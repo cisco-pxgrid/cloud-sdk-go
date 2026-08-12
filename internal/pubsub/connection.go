@@ -78,12 +78,9 @@ var (
 	// defaultStatusLogInterval is how often the connection logs a status heartbeat
 	// and a per-stream message-count summary for diagnostics.
 	defaultStatusLogInterval = 60 * time.Second
-	// defaultMessageGapThreshold is how long a subscribed stream may receive no broker
-	// response, while the connection is up, before it is classified as consumer_stalled.
-	defaultMessageGapThreshold = 2 * time.Minute
-	WebSocketScheme            = "wss"
-	HttpScheme                 = "https"
-	apiPaths                   = struct {
+	WebSocketScheme          = "wss"
+	HttpScheme               = "https"
+	apiPaths                 = struct {
 		subscriptions string
 		pubsub        string
 	}{
@@ -128,206 +125,12 @@ type Config struct {
 	// is received on the read stream, before any processing.
 	LogEachMessage bool
 
-	// MessageGapThreshold defines how long a subscribed stream may receive no broker response,
-	// while the connection is up, before consumer_stalled is logged. Empty broker responses are
-	// classified as broker_quiet and do not produce a warning. Default is 2 minutes.
-	MessageGapThreshold time.Duration
-
 	Transport *http.Transport
 
 	// stats holds shared read-stream diagnostic metrics. It is injected by NewConnection so
 	// that it survives across reconnects (each reconnect builds a new internalConnection from
 	// the same Config). It is unexported and cannot be set by callers.
 	stats *connStats
-}
-
-// streamStats contains cumulative counters and last-known timestamps for one stream. Counters are
-// never reset by readers: each observer can safely calculate its own interval deltas.
-type streamStats struct {
-	active               bool
-	subscribedAt         time.Time
-	lastBrokerResponseAt time.Time
-	lastMessageAt        time.Time
-	lastCursorChangeAt   time.Time
-	lastSDKProcessingAt  time.Time
-	brokerResponses      int64
-	brokerMessages       int64
-	dispatchStarts       int64
-	sdkProcessingStarts  int64
-	sdkProcessingEnds    int64
-	cursorChanges        int64
-	lastConsumeCtx       string
-	sdkProcessingActive  bool
-	sdkProcessingMsgID   string
-	sdkProcessingTopic   string
-}
-
-// streamStatsSnapshot is an immutable point-in-time copy returned to diagnostic observers.
-type streamStatsSnapshot streamStats
-
-type connStatsSnapshot struct {
-	connectedSince time.Time
-	reconnectCount int
-	streams        map[string]streamStatsSnapshot
-}
-
-// connStats tracks read-stream delivery and connection-status metrics for diagnostic logging. A
-// single instance is shared across reconnects via Config.stats.
-type connStats struct {
-	mu             sync.Mutex
-	connectedSince time.Time
-	reconnectCount int
-	streams        map[string]*streamStats
-}
-
-func newConnStats() *connStats {
-	return &connStats{streams: make(map[string]*streamStats)}
-}
-
-func (s *connStats) streamLocked(stream string) *streamStats {
-	stats, ok := s.streams[stream]
-	if !ok {
-		stats = &streamStats{}
-		s.streams[stream] = stats
-	}
-	return stats
-}
-
-// recordConnected marks the time the underlying connection was established.
-func (s *connStats) recordConnected() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.connectedSince = time.Now()
-}
-
-// recordReconnect increments the reconnect counter.
-func (s *connStats) recordReconnect() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.reconnectCount++
-}
-
-// recordBrokerResponse records a decoded broker response before it is handed to the subscriber.
-// This observation point remains truthful even when subscriber dispatch or an app callback blocks.
-func (s *connStats) recordBrokerResponse(stream, consumeCtx string, messageCount int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stats := s.streamLocked(stream)
-	now := time.Now()
-	stats.brokerResponses++
-	stats.lastBrokerResponseAt = now
-	if messageCount > 0 {
-		stats.brokerMessages += int64(messageCount)
-		stats.lastMessageAt = now
-	}
-	if consumeCtx != "" && consumeCtx != stats.lastConsumeCtx {
-		stats.cursorChanges++
-		stats.lastCursorChangeAt = now
-	}
-	stats.lastConsumeCtx = consumeCtx
-}
-
-func (s *connStats) recordDispatch(stream string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.streamLocked(stream).dispatchStarts++
-}
-
-func (s *connStats) recordSDKProcessingStart(stream, msgID, topic string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stats := s.streamLocked(stream)
-	stats.sdkProcessingStarts++
-	stats.sdkProcessingActive = true
-	stats.lastSDKProcessingAt = time.Now()
-	stats.sdkProcessingMsgID = msgID
-	stats.sdkProcessingTopic = topic
-}
-
-func (s *connStats) recordSDKProcessingComplete(stream string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stats := s.streamLocked(stream)
-	stats.sdkProcessingEnds++
-	stats.sdkProcessingActive = false
-}
-
-// beginStreamLifecycle resets only current-subscription evidence. Cumulative counters survive
-// subscribe, unsubscribe, and reconnect boundaries for process-lifetime diagnostics.
-func (s *connStats) beginStreamLifecycle(stream string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stats := s.streamLocked(stream)
-	stats.active = true
-	stats.subscribedAt = time.Now()
-	stats.lastBrokerResponseAt = time.Time{}
-	stats.lastMessageAt = time.Time{}
-	stats.lastCursorChangeAt = time.Time{}
-	stats.lastSDKProcessingAt = time.Time{}
-	stats.lastConsumeCtx = ""
-	stats.sdkProcessingActive = false
-	stats.sdkProcessingMsgID = ""
-	stats.sdkProcessingTopic = ""
-}
-
-// endStreamLifecycle removes current-subscription evidence after a permanent unsubscribe while
-// preserving process-lifetime counters.
-func (s *connStats) endStreamLifecycle(stream string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stats, ok := s.streams[stream]
-	if !ok {
-		return
-	}
-	stats.active = false
-	stats.subscribedAt = time.Time{}
-	stats.lastBrokerResponseAt = time.Time{}
-	stats.lastMessageAt = time.Time{}
-	stats.lastCursorChangeAt = time.Time{}
-	stats.lastSDKProcessingAt = time.Time{}
-	stats.lastConsumeCtx = ""
-	stats.sdkProcessingActive = false
-	stats.sdkProcessingMsgID = ""
-	stats.sdkProcessingTopic = ""
-}
-
-// reconnectSnapshot returns the current reconnect count.
-func (s *connStats) reconnectSnapshot() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.reconnectCount
-}
-
-// sinceLastMessage returns the elapsed time since the most recent message on the stream.
-// It returns 0 if no message has been recorded for the stream.
-func (s *connStats) sinceLastMessage(stream string) time.Duration {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stats, ok := s.streams[stream]
-	if !ok || !stats.active {
-		return 0
-	}
-	baseline := stats.lastMessageAt
-	if baseline.IsZero() {
-		baseline = stats.subscribedAt
-	}
-	return time.Since(baseline)
-}
-
-// snapshot returns a non-destructive point-in-time copy. Cumulative source counters remain
-// available to every diagnostic observer.
-func (s *connStats) snapshot() connStatsSnapshot {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	snapshot := connStatsSnapshot{
-		connectedSince: s.connectedSince,
-		reconnectCount: s.reconnectCount,
-		streams:        make(map[string]streamStatsSnapshot, len(s.streams)),
-	}
-	for stream, stats := range s.streams {
-		snapshot.streams[stream] = streamStatsSnapshot(*stats)
-	}
-	return snapshot
 }
 
 // internalConnection represents a connection to the DxHub PubSub server.
@@ -375,9 +178,6 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 	}
 	if config.StatusLogInterval == 0 {
 		config.StatusLogInterval = defaultStatusLogInterval
-	}
-	if config.MessageGapThreshold == 0 {
-		config.MessageGapThreshold = defaultMessageGapThreshold
 	}
 	if config.stats == nil {
 		config.stats = newConnStats()

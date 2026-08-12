@@ -85,33 +85,40 @@ func TestDiagnosticSnapshotsDuringSubscriptionChanges(t *testing.T) {
 	require.Empty(t, connection.subscriptionSnapshot())
 }
 
-func TestDisconnectInvalidatesInFlightConnectLifecycle(t *testing.T) {
-	connection := &Connection{}
-	generation := connection.lifecycleGenerationSnapshot()
+func TestDisconnectCancelsInFlightConnectAttempt(t *testing.T) {
+	attemptCtx, attemptCancel := context.WithCancel(context.Background())
+	connection := &Connection{attemptConnectCancel: attemptCancel}
 
-	// Simulate Disconnect occurring while Connect is doing network I/O.
-	require.Nil(t, connection.cancelLifecycle())
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	require.False(t, connection.activateLifecycle(generation, cancel),
-		"an in-flight Connect must not publish a lifecycle after Disconnect")
-
-	// A later lifecycle can still be activated and canceled normally.
-	nextGeneration := connection.lifecycleGenerationSnapshot()
-	nextCtx, nextCancel := context.WithCancel(context.Background())
-	require.True(t, connection.activateLifecycle(nextGeneration, nextCancel))
-	activeCancel := connection.cancelLifecycle()
-	require.NotNil(t, activeCancel)
-	activeCancel()
+	// Simulate Connect holding lifecycle serialization while it waits on network I/O. Disconnect
+	// must cancel the attempt before waiting for lifecycleMu.
+	connection.lifecycleMu.Lock()
+	done := make(chan struct{})
+	go func() {
+		connection.Disconnect()
+		close(done)
+	}()
 	select {
-	case <-nextCtx.Done():
+	case <-attemptCtx.Done():
 	case <-time.After(time.Second):
-		t.Fatal("active lifecycle was not canceled")
+		t.Fatal("in-flight connection attempt was not canceled")
+	}
+	connection.lifecycleMu.Unlock()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("disconnect did not finish after lifecycle operation completed")
 	}
 
+	activeCtx, activeCancel := context.WithCancel(context.Background())
+	connection.mu.Lock()
+	connection.attemptConnectCancel = nil
+	connection.ctxCancel = activeCancel
+	connection.mu.Unlock()
+	connection.Disconnect()
+
 	select {
-	case <-ctx.Done():
-		t.Fatal("rejected lifecycle should only be canceled by its Connect caller")
-	default:
+	case <-activeCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("active lifecycle was not canceled")
 	}
 }

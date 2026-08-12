@@ -124,11 +124,6 @@ type Config struct {
 	// LogEachMessage controls whether the SDK logs a concise INFO line for every message
 	// received on the read stream, before processing. Defaults to false (disabled) when nil.
 	LogEachMessage *bool
-
-	// MessageGapThreshold controls how long a subscribed stream may receive no broker response,
-	// while the connection is up, before the SDK logs a consumer_stalled transition. Empty broker
-	// responses are classified as broker_quiet. Default is 2 minutes.
-	MessageGapThreshold time.Duration
 }
 
 // App represents an instance of a pxGrid Cloud Application
@@ -208,8 +203,8 @@ func New(config Config) (*App, error) {
 	}
 
 	app.ctx, app.ctxCancel = context.WithCancel(context.Background())
-	log.Logger.Infof("Read-stream diagnostics config. statusLogInterval=%s messageGapThreshold=%s logEachMessage=%t (0 durations fall back to SDK defaults 60s/2m)",
-		config.StatusLogInterval, config.MessageGapThreshold, app.logEachMessage())
+	log.Logger.Infof("Read-stream diagnostics config. statusLogInterval=%s logEachMessage=%t (0 duration falls back to SDK default 60s)",
+		config.StatusLogInterval, app.logEachMessage())
 	return app, nil
 }
 
@@ -303,10 +298,9 @@ func (app *App) pubsubConnect() error {
 					return []byte(app.config.ApiKey), nil
 				}
 			},
-			Transport:           app.config.Transport,
-			StatusLogInterval:   app.config.StatusLogInterval,
-			LogEachMessage:      app.logEachMessage(),
-			MessageGapThreshold: app.config.MessageGapThreshold,
+			Transport:         app.config.Transport,
+			StatusLogInterval: app.config.StatusLogInterval,
+			LogEachMessage:    app.logEachMessage(),
 		})
 		if connectionErr != nil {
 			return fmt.Errorf("failed to create pubsub connection: %v", connectionErr)

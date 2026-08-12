@@ -4,6 +4,7 @@
 package pubsub
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -179,9 +180,10 @@ func TestConnStats_StreamLifecycleResetsBaselinesAndPreservesTotals(t *testing.T
 	s.endStreamLifecycle("stream-a")
 	ended := s.snapshot().streams["stream-a"]
 	require.False(t, ended.active)
-	require.True(t, ended.subscribedAt.IsZero())
-	require.True(t, ended.lastBrokerResponseAt.IsZero())
-	require.Empty(t, ended.lastConsumeCtx)
+	require.Equal(t, before.subscribedAt, ended.subscribedAt)
+	require.Equal(t, before.lastBrokerResponseAt, ended.lastBrokerResponseAt)
+	require.Equal(t, before.lastMessageAt, ended.lastMessageAt)
+	require.Equal(t, before.lastConsumeCtx, ended.lastConsumeCtx)
 	require.Equal(t, before.brokerResponses, ended.brokerResponses)
 	require.Equal(t, before.brokerMessages, ended.brokerMessages)
 	require.Equal(t, before.sdkProcessingEnds, ended.sdkProcessingEnds)
@@ -191,8 +193,10 @@ func TestConnStats_StreamLifecycleResetsBaselinesAndPreservesTotals(t *testing.T
 	after := s.snapshot().streams["stream-a"]
 	require.True(t, after.active)
 	require.False(t, after.subscribedAt.Before(resubscribedAt))
-	require.True(t, after.lastBrokerResponseAt.IsZero())
-	require.True(t, after.lastMessageAt.IsZero())
+	require.Equal(t, after.subscribedAt, after.lastBrokerResponseAt)
+	require.Equal(t, after.subscribedAt, after.lastMessageAt)
+	require.Equal(t, after.subscribedAt, after.lastCursorChangeAt)
+	require.Equal(t, after.subscribedAt, after.lastSDKProcessingAt)
 	require.Empty(t, after.lastConsumeCtx)
 	require.Equal(t, before.brokerMessages, after.brokerMessages, "cumulative totals must survive resubscribe")
 	require.Equal(t, before.cursorChanges, after.cursorChanges)
@@ -208,7 +212,6 @@ func TestNewInternalConnection_DiagnosticDefaults(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, defaultStatusLogInterval, c.config.StatusLogInterval)
-	require.Equal(t, defaultMessageGapThreshold, c.config.MessageGapThreshold)
 	require.NotNil(t, c.config.stats)
 }
 
@@ -283,11 +286,10 @@ func TestPerMessageLogging_Toggle(t *testing.T) {
 	require.Equal(t, before, len(cl.infoSnapshot()))
 }
 
-func TestClassifyStream_DistinguishesQuietStallAndBlockedCallback(t *testing.T) {
+func TestClassifyStream_DistinguishesDeliveryAndBlockedCallback(t *testing.T) {
 	now := time.Now()
 	recent := now.Add(-time.Second)
 	old := now.Add(-5 * time.Minute)
-	threshold := 2 * time.Minute
 	sdkProcessingThreshold := 10 * time.Second
 
 	tests := []struct {
@@ -305,13 +307,13 @@ func TestClassifyStream_DistinguishesQuietStallAndBlockedCallback(t *testing.T) 
 			want:         streamStateDisconnected,
 		},
 		{
-			name:         "reconnecting pauses stall classification",
+			name:         "reconnecting lifecycle is explicit",
 			reconnecting: true,
 			stats:        streamStatsSnapshot{subscribedAt: old, lastBrokerResponseAt: old},
 			want:         streamStateReconnecting,
 		},
 		{
-			name:  "slow callback is not a broker stall",
+			name:  "slow callback identifies blocked processing",
 			stats: streamStatsSnapshot{subscribedAt: old, lastBrokerResponseAt: recent, sdkProcessingActive: true, lastSDKProcessingAt: old},
 			want:  streamStateSDKProcessingBlocked,
 		},
@@ -320,11 +322,6 @@ func TestClassifyStream_DistinguishesQuietStallAndBlockedCallback(t *testing.T) 
 			disconnected: true,
 			stats:        streamStatsSnapshot{subscribedAt: old, sdkProcessingActive: true, lastSDKProcessingAt: old},
 			want:         streamStateSDKProcessingBlocked,
-		},
-		{
-			name:  "no broker response beyond threshold is consumer stalled",
-			stats: streamStatsSnapshot{subscribedAt: old, lastBrokerResponseAt: old},
-			want:  streamStateConsumerStalled,
 		},
 		{
 			name:  "empty responses are valid broker quiet",
@@ -347,7 +344,7 @@ func TestClassifyStream_DistinguishesQuietStallAndBlockedCallback(t *testing.T) 
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, classifyStream(now, tt.disconnected, tt.reconnecting, tt.stats, tt.delta, threshold, sdkProcessingThreshold))
+			require.Equal(t, tt.want, classifyStream(now, tt.disconnected, tt.reconnecting, tt.stats, tt.delta, sdkProcessingThreshold))
 		})
 	}
 }
@@ -355,11 +352,7 @@ func TestClassifyStream_DistinguishesQuietStallAndBlockedCallback(t *testing.T) 
 func TestDiagnosticStateTransitionsAreNotRepeated(t *testing.T) {
 	require.True(t, diagnosticStateChanged("", streamStateBrokerQuiet, false))
 	require.False(t, diagnosticStateChanged(streamStateBrokerQuiet, streamStateBrokerQuiet, true))
-	require.True(t, diagnosticStateChanged(streamStateBrokerQuiet, streamStateConsumerStalled, true))
-
-	require.False(t, diagnosticStateWarns(streamStateBrokerQuiet))
-	require.False(t, diagnosticStateWarns(streamStateSDKProcessingBlocked), "SDK-processing watchdog owns the rate-limited warning")
-	require.True(t, diagnosticStateWarns(streamStateConsumerStalled))
+	require.True(t, diagnosticStateChanged(streamStateBrokerQuiet, streamStateSDKProcessingBlocked, true))
 }
 
 func TestDecodeConsumeOffset(t *testing.T) {
@@ -400,24 +393,16 @@ func TestDecodeConsumeOffset(t *testing.T) {
 }
 
 func TestCallbackWatchdogLogsBlockedCallback(t *testing.T) {
-	originalLogger := log.Logger
-	defer func() {
-		log.Logger = originalLogger
-	}()
-
 	captured := &captureLogger{}
-	log.Logger = captured
 	threshold := 5 * time.Millisecond
 	interval := 5 * time.Millisecond
 
-	connection := &internalConnection{config: Config{Domain: "example.com"}}
-	sub := &subscription{stream: "app--x-R", id: "sub-1"}
 	watch := &sdkProcessingWatch{}
-	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
-		connection.sdkProcessingWatchdog(sub, watch, done, threshold, interval)
+		runSDKProcessingWatchdog(ctx, captured, "example.com", "app--x-R", "sub-1", watch, threshold, interval)
 	}()
 
 	watch.begin("mid-1", "pxcloud--session-sessions")
@@ -431,6 +416,6 @@ func TestCallbackWatchdogLogsBlockedCallback(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 	require.Equal(t, 1, countContains(captured.warnSnapshot(), "SDK read-stream processing slow/blocked"))
 	watch.end()
-	close(done)
+	cancel()
 	<-stopped
 }

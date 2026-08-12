@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func startStatusLoggerHarness(t *testing.T, stats *connStats, gapThreshold time.Duration, subscriptions ...string) (*Connection, func()) {
+func startStatusLoggerHarness(t *testing.T, stats *connStats, subscriptions ...string) (*Connection, func()) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	params := make(map[string]subscriptionParams, len(subscriptions))
@@ -23,11 +23,10 @@ func startStatusLoggerHarness(t *testing.T, stats *connStats, gapThreshold time.
 	}
 	connection := &Connection{
 		config: Config{
-			Domain:              "diagnostics.example.com",
-			GroupID:             "diagnostics-group",
-			StatusLogInterval:   2 * time.Millisecond,
-			MessageGapThreshold: gapThreshold,
-			stats:               stats,
+			Domain:            "diagnostics.example.com",
+			GroupID:           "diagnostics-group",
+			StatusLogInterval: 2 * time.Millisecond,
+			stats:             stats,
 		},
 		conn:          &internalConnection{closed: make(chan struct{})},
 		subscriptions: params,
@@ -73,34 +72,15 @@ func TestStatusLoggerClassifiesEmptyFrozenCursorAsBrokerQuiet(t *testing.T) {
 	stats := newConnStats()
 	stats.beginStreamLifecycle("stream-a")
 	stats.recordBrokerResponse("stream-a", "frozen-context", 0)
-	_, stop := startStatusLoggerHarness(t, stats, 100*time.Millisecond, "stream-a")
-	defer stop()
+	_, stop := startStatusLoggerHarness(t, stats, "stream-a")
 
 	require.Eventually(t, func() bool { return captured.infoContains("state=awaiting_activity") }, time.Second, 2*time.Millisecond)
 	stats.recordBrokerResponse("stream-a", "frozen-context", 0)
 	require.Eventually(t, func() bool {
 		return logLineContainsAll(captured.infoSnapshot(), "Read-stream summary", "state=broker_quiet", "consumeIters=1", "received=0", "cursorChanges=0")
 	}, time.Second, 2*time.Millisecond)
-	require.False(t, captured.warnContains("state=consumer_stalled"), "valid empty responses must not warn")
-}
-
-func TestStatusLoggerWarnsOnceWhenBrokerResponsesStop(t *testing.T) {
-	originalLogger := log.Logger
-	defer func() { log.Logger = originalLogger }()
-	captured := &captureLogger{}
-	log.Logger = captured
-
-	stats := newConnStats()
-	stats.beginStreamLifecycle("stream-a")
-	stats.mu.Lock()
-	stats.streams["stream-a"].subscribedAt = time.Now().Add(-time.Minute)
-	stats.mu.Unlock()
-	_, stop := startStatusLoggerHarness(t, stats, 10*time.Millisecond, "stream-a")
-	defer stop()
-
-	require.Eventually(t, func() bool { return captured.warnContains("state=consumer_stalled") }, time.Second, 2*time.Millisecond)
-	time.Sleep(20 * time.Millisecond)
-	require.Equal(t, 1, len(captured.warnSnapshot()), "unchanged stalled state must not warn every interval")
+	stop()
+	require.True(t, captured.infoContains("Read-stream status logger stopped."))
 }
 
 func TestConsumeTimeoutReconnectEmitsCompleteDiagnosticSequence(t *testing.T) {

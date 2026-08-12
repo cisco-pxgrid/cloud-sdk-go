@@ -232,7 +232,6 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable debug output")
 	insecure := flag.Bool("insecure", false, "Skip TLS certificate verification")
 	statusInterval := flag.Duration("status-interval", 10*time.Second, "Explicit read-stream status/summary interval")
-	gapThreshold := flag.Duration("gap-threshold", 20*time.Second, "Explicit no-broker-response threshold")
 	logEachMessage := flag.Bool("log-each-message", true, "Explicitly enable per-message arrival logging")
 	publishInterval := flag.Duration("publish-interval", 3*time.Second, "Echo-message publish interval")
 	callbackMode := flag.String("callback-mode", "cycle", "Callback behavior: cycle, normal, slow, or blocked")
@@ -245,7 +244,7 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if *statusInterval <= 0 || *gapThreshold <= 0 || *publishInterval <= 0 || *slowDuration <= 0 || *blockDuration <= 0 {
+	if *statusInterval <= 0 || *publishInterval <= 0 || *slowDuration <= 0 || *blockDuration <= 0 {
 		logger.Errorf("all duration flags must be greater than zero")
 		os.Exit(2)
 	}
@@ -302,9 +301,8 @@ func main() {
 		Transport:     transport,
 
 		// Set every diagnostic option explicitly. The SDK defaults are intentionally not used.
-		StatusLogInterval:   *statusInterval,
-		LogEachMessage:      logEachMessage,
-		MessageGapThreshold: *gapThreshold,
+		StatusLogInterval: *statusInterval,
+		LogEachMessage:    logEachMessage,
 
 		DeviceMessageHandler: simulator.handle,
 		DeviceActivationHandler: func(device *sdk.Device) {
@@ -320,8 +318,8 @@ func main() {
 		},
 	}
 
-	logger.Infof("DIAGNOSTIC TEST configuration. statusInterval=%s gapThreshold=%s logEachMessage=%t publishInterval=%s callbackMode=%s slowDuration=%s blockDuration=%s",
-		*statusInterval, *gapThreshold, *logEachMessage, *publishInterval, *callbackMode, *slowDuration, *blockDuration)
+	logger.Infof("DIAGNOSTIC TEST configuration. statusInterval=%s logEachMessage=%t publishInterval=%s callbackMode=%s slowDuration=%s blockDuration=%s",
+		*statusInterval, *logEachMessage, *publishInterval, *callbackMode, *slowDuration, *blockDuration)
 
 	app, err := sdk.New(appConfig)
 	if err != nil {
