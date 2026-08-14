@@ -1,0 +1,12 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "01e307bb22d810f02ae9fddc0dba0fafba0edec9",
+  "prompts": {},
+  "humans": {
+    "h_83a28b10931070": {
+      "author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
