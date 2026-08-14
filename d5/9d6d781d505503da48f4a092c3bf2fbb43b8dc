@@ -1,0 +1,30 @@
+internal/pubsub/read_stream_diagnostics_integration_test.go
+  s_ccb708a419bf66::t_65ee3e22931bd9 206,245-275
+  s_ccb708a419bf66::t_dcd9e86294cc8d 276
+docs/READ-STREAM-DIAGNOSTICS-IMPROVEMENT-TRACKER.md
+  s_ccb708a419bf66::t_2b6e18c19cd717 47,267-270,433
+docs/READ-STREAM-DIAGNOSTICS-TEST-SUMMARY.md
+  s_ccb708a419bf66::t_2b6e18c19cd717 31,846-858
+  s_ccb708a419bf66::t_a5f41f1e95042a 859
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d59d6d781d505503da48f4a092c3bf2fbb43b8dc",
+  "prompts": {},
+  "humans": {
+    "h_83a28b10931070": {
+      "author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  },
+  "sessions": {
+    "s_ccb708a419bf66": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f897c-ac6f-7681-bf93-89503aefb5c2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
