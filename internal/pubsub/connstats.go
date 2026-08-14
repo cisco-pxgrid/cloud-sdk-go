@@ -166,6 +166,16 @@ func (s *connStats) sinceLastMessage(stream string) time.Duration {
 	return time.Since(stats.lastMessageAt)
 }
 
+func (s *connStats) sinceLastBrokerResponse(stream string) time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stats, ok := s.streams[stream]
+	if !ok || !stats.active || stats.lastBrokerResponseAt.IsZero() {
+		return 0
+	}
+	return time.Since(stats.lastBrokerResponseAt)
+}
+
 // snapshot returns a non-destructive point-in-time copy. Cumulative source counters remain
 // available to every diagnostic observer.
 func (s *connStats) snapshot() connStatsSnapshot {

@@ -125,6 +125,10 @@ type Config struct {
 	// is received on the read stream, before any processing.
 	LogEachMessage bool
 
+	// GapTracker forwards confirmed consume gaps and recoveries to the owning App. It is shared
+	// across Connection reconstruction and is nil unless the application registers a handler.
+	GapTracker *ReadStreamGapTracker
+
 	Transport *http.Transport
 
 	// stats holds shared read-stream diagnostic metrics. It is injected by NewConnection so

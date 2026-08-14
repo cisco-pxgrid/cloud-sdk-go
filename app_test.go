@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub"
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub/test"
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/rpc"
 	"github.com/cisco-pxgrid/websocket"
@@ -70,6 +72,91 @@ func TestLogEachMessageDefaultsToDisabled(t *testing.T) {
 	disabled := false
 	app.config.LogEachMessage = &disabled
 	require.False(t, app.logEachMessage())
+}
+
+func TestReadStreamGapHandlerIsOrderedAndDoesNotBlockSDKProducer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	received := make(chan ReadStreamGapState, 2)
+	app := &App{
+		config: Config{
+			RegionalFQDNs: []string{"region.example.com"},
+			ReadStreamGapHandler: func(event ReadStreamGapEvent) {
+				received <- event.State
+				if event.State == ReadStreamGapDetected {
+					close(handlerStarted)
+					<-releaseHandler
+				}
+			},
+		},
+		ctx: ctx,
+	}
+	app.configureReadStreamGapNotifications()
+	require.Len(t, app.readStreamGapTrackers, 1)
+
+	app.enqueueReadStreamGapEvent(pubsub.ReadStreamGapEvent{
+		State:  pubsub.ReadStreamGapDetected,
+		Reason: pubsub.ReadStreamGapReasonBrokerResponseTimeout,
+		Region: "region.example.com",
+		Stream: "stream-a",
+	})
+	<-handlerStarted
+
+	producerReturned := make(chan struct{})
+	go func() {
+		app.enqueueReadStreamGapEvent(pubsub.ReadStreamGapEvent{
+			State:  pubsub.ReadStreamGapRecovered,
+			Reason: pubsub.ReadStreamGapReasonBrokerResponseTimeout,
+			Region: "region.example.com",
+			Stream: "stream-a",
+		})
+		close(producerReturned)
+	}()
+	select {
+	case <-producerReturned:
+	case <-time.After(time.Second):
+		t.Fatal("blocked application handler prevented the SDK producer from returning")
+	}
+
+	close(releaseHandler)
+	require.Equal(t, ReadStreamGapDetected, <-received)
+	require.Equal(t, ReadStreamGapRecovered, <-received)
+}
+
+func TestReadStreamGapHandlerPanicIsContained(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var calls atomic.Uint32
+	app := &App{
+		config: Config{
+			RegionalFQDNs: []string{"region.example.com"},
+			ReadStreamGapHandler: func(ReadStreamGapEvent) {
+				calls.Add(1)
+				panic("test panic")
+			},
+		},
+		ctx: ctx,
+	}
+	app.configureReadStreamGapNotifications()
+	app.enqueueReadStreamGapEvent(pubsub.ReadStreamGapEvent{State: pubsub.ReadStreamGapDetected})
+	app.enqueueReadStreamGapEvent(pubsub.ReadStreamGapEvent{State: pubsub.ReadStreamGapRecovered})
+	require.Eventually(t, func() bool { return calls.Load() == 2 }, time.Second, 2*time.Millisecond)
+}
+
+func TestNewAppConfigPropagatesReadStreamGapHandler(t *testing.T) {
+	called := false
+	app := &App{config: Config{
+		ReadStreamGapHandler: func(ReadStreamGapEvent) { called = true },
+	}}
+
+	instanceConfig := app.newAppConfig("instance-id", "instance-key")
+	require.NotNil(t, instanceConfig.ReadStreamGapHandler)
+	instanceConfig.ReadStreamGapHandler(ReadStreamGapEvent{})
+	require.True(t, called)
 }
 
 func TestDeviceMessageHandlerDiagnosticsAttributeUserCallback(t *testing.T) {

@@ -160,6 +160,9 @@ func (c *Connection) Subscribe(stream string, handler SubscriptionCallback) erro
 	c.mu.Lock()
 	c.subscriptions[stream] = sub
 	c.mu.Unlock()
+	if c.config.GapTracker != nil {
+		c.config.GapTracker.connectionReady(stream)
+	}
 	return nil
 }
 
@@ -234,6 +237,11 @@ func (c *Connection) errorHandler(ctx context.Context) {
 				c.config.Domain, c.config.GroupID, len(subscriptions),
 				time.Since(reconnectStart).Milliseconds(), c.config.stats.reconnectSnapshot())
 			c.setReconnecting(false)
+			if c.config.GapTracker != nil {
+				for _, sub := range subscriptions {
+					c.config.GapTracker.connectionReady(sub.stream)
+				}
+			}
 		case <-ctx.Done():
 			return
 		}

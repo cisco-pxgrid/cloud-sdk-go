@@ -52,12 +52,46 @@ var tlsConfig = tls.Config{
 var deviceMessageHandlerSlowWarnThreshold = 10 * time.Second
 var deviceMessageHandlerReminderInterval = 15 * time.Second
 
+const readStreamGapEventBuffer = 16
+
 // Credentials are fields that is used for request authorization
 // Credentials required to be stored securely
 type Credentials struct {
 	// ApiKey is obtained during app onboarding with dragonfly
 	// ApiKey will be zeroed after use, therefore AppConfig.GetCredentials function should provide new structure every invocation
 	ApiKey []byte
+}
+
+// ReadStreamGapState identifies whether a confirmed read-stream gap started or recovered.
+type ReadStreamGapState string
+
+const (
+	ReadStreamGapDetected  ReadStreamGapState = "detected"
+	ReadStreamGapRecovered ReadStreamGapState = "recovered"
+)
+
+// ReadStreamGapReason identifies the SDK condition that confirmed the gap.
+type ReadStreamGapReason string
+
+const (
+	// ReadStreamGapReasonBrokerResponseTimeout means a consume request did not receive a broker
+	// response within the SDK's established timeout.
+	ReadStreamGapReasonBrokerResponseTimeout ReadStreamGapReason = "broker_response_timeout"
+	// ReadStreamGapReasonProcessingBackpressure means the subscriber could not accept a broker
+	// response because SDK/application processing remained blocked.
+	ReadStreamGapReasonProcessingBackpressure ReadStreamGapReason = "processing_backpressure"
+)
+
+// ReadStreamGapEvent describes one edge-triggered read-stream gap transition. Duration is the
+// observed gap age when detected and the total gap duration when recovered.
+type ReadStreamGapEvent struct {
+	State          ReadStreamGapState
+	Reason         ReadStreamGapReason
+	Region         string
+	Stream         string
+	Duration       time.Duration
+	ReconnectCount int64
+	OccurredAt     time.Time
 }
 
 // Config defines the configuration for an application
@@ -124,6 +158,11 @@ type Config struct {
 	// LogEachMessage controls whether the SDK logs a concise INFO line for every message
 	// received on the read stream, before processing. Defaults to false (disabled) when nil.
 	LogEachMessage *bool
+
+	// ReadStreamGapHandler receives confirmed consume-gap and recovery transitions. It is optional
+	// and invoked asynchronously so application code cannot block message consumption or reconnect.
+	// The handler should return promptly; notifications are operational and best-effort.
+	ReadStreamGapHandler func(event ReadStreamGapEvent)
 }
 
 // App represents an instance of a pxGrid Cloud Application
@@ -142,6 +181,8 @@ type App struct {
 	ctx                    context.Context
 	ctxCancel              context.CancelFunc
 	startPubsubConnectOnce sync.Once
+	readStreamGapEvents    chan ReadStreamGapEvent
+	readStreamGapTrackers  []*pubsub.ReadStreamGapTracker
 }
 
 var (
@@ -203,9 +244,61 @@ func New(config Config) (*App, error) {
 	}
 
 	app.ctx, app.ctxCancel = context.WithCancel(context.Background())
+	app.configureReadStreamGapNotifications()
 	log.Logger.Infof("Read-stream diagnostics config. statusLogInterval=%s logEachMessage=%t (0 duration falls back to SDK default 60s)",
 		config.StatusLogInterval, app.logEachMessage())
 	return app, nil
+}
+
+func (app *App) configureReadStreamGapNotifications() {
+	if app.config.ReadStreamGapHandler == nil {
+		return
+	}
+	app.readStreamGapEvents = make(chan ReadStreamGapEvent, readStreamGapEventBuffer)
+	app.readStreamGapTrackers = make([]*pubsub.ReadStreamGapTracker, len(app.config.RegionalFQDNs))
+	for i := range app.readStreamGapTrackers {
+		app.readStreamGapTrackers[i] = pubsub.NewReadStreamGapTracker(app.enqueueReadStreamGapEvent)
+	}
+	go app.dispatchReadStreamGapEvents()
+}
+
+func (app *App) enqueueReadStreamGapEvent(event pubsub.ReadStreamGapEvent) {
+	publicEvent := ReadStreamGapEvent{
+		State:          ReadStreamGapState(event.State),
+		Reason:         ReadStreamGapReason(event.Reason),
+		Region:         event.Region,
+		Stream:         event.Stream,
+		Duration:       event.Duration,
+		ReconnectCount: event.ReconnectCount,
+		OccurredAt:     event.OccurredAt,
+	}
+	select {
+	case app.readStreamGapEvents <- publicEvent:
+	default:
+		log.Logger.Warnf("ReadStreamGapHandler notification dropped. state=%s reason=%s region=%s stream=%s",
+			publicEvent.State, publicEvent.Reason, publicEvent.Region, publicEvent.Stream)
+	}
+}
+
+func (app *App) dispatchReadStreamGapEvents() {
+	for {
+		select {
+		case event := <-app.readStreamGapEvents:
+			app.invokeReadStreamGapHandler(event)
+		case <-app.ctx.Done():
+			return
+		}
+	}
+}
+
+func (app *App) invokeReadStreamGapHandler(event ReadStreamGapEvent) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Logger.Errorf("ReadStreamGapHandler panicked. state=%s reason=%s region=%s stream=%s panic=%v",
+				event.State, event.Reason, event.Region, event.Stream, recovered)
+		}
+	}()
+	app.config.ReadStreamGapHandler(event)
 }
 
 func validateConfig(config *Config) error {
@@ -301,6 +394,7 @@ func (app *App) pubsubConnect() error {
 			Transport:         app.config.Transport,
 			StatusLogInterval: app.config.StatusLogInterval,
 			LogEachMessage:    app.logEachMessage(),
+			GapTracker:        app.readStreamGapTracker(i),
 		})
 		if connectionErr != nil {
 			return fmt.Errorf("failed to create pubsub connection: %v", connectionErr)
@@ -323,6 +417,13 @@ func (app *App) pubsubConnect() error {
 	}
 
 	return nil
+}
+
+func (app *App) readStreamGapTracker(index int) *pubsub.ReadStreamGapTracker {
+	if index < 0 || index >= len(app.readStreamGapTrackers) {
+		return nil
+	}
+	return app.readStreamGapTrackers[index]
 }
 
 const (

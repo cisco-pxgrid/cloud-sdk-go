@@ -1,8 +1,9 @@
 # Read-stream diagnostics example
 
-This example enables the optional per-message log, shortens the periodic status interval, publishes
-echo messages to active devices, and exercises normal, slow, and blocked application callbacks. It
-also verifies that diagnostic settings propagate from a parent application to its app instance.
+This example enables the optional per-message log and read-stream gap callback, shortens the
+periodic status interval, publishes echo messages to active devices, and exercises normal, slow,
+and blocked application callbacks. It also verifies that diagnostic settings and the callback
+propagate from a parent application to its app instance.
 
 ## Build
 
@@ -49,6 +50,7 @@ The example explicitly sets:
 
 - a 10-second status interval;
 - per-message arrival logging enabled;
+- confirmed read-stream gap and recovery notifications enabled;
 - an echo publish every 3 seconds;
 - callback mode `cycle`: normal, slow for 12 seconds, then blocked for 40 seconds.
 
@@ -60,6 +62,9 @@ Useful focused runs:
 
 # Focus on blocked-callback detection and recovery.
 ./read-stream-diagnostics -config ./config.yaml -callback-mode blocked -status-interval 5s
+
+# Cross the established 60-second processing timeout to verify detected/recovered gap callbacks.
+./read-stream-diagnostics -config ./config.yaml -callback-mode blocked -block-duration 75s -status-interval 5s
 ```
 
 Available controls are `-status-interval`, `-log-each-message`, `-publish-interval`,
@@ -91,6 +96,21 @@ WARN User DeviceMessageHandler returned after delay. region=<region> msgID=<id> 
 WARN SDK read-stream processing returned after delay. region=<region> ... msgID=<id> ... durationSec=40
 ```
 
+A callback that remains blocked past the established processing timeout, or a consume request that
+does not receive a broker response, produces one gap notification. Recovery is emitted only after
+reconnect/resubscribe completes and the stream receives a subsequent broker response:
+
+```text
+WARN Consume timeout. Disconnecting. region=<region> stream=<stream> ... reason=processing_backpressure ...
+WARN DIAGNOSTIC TEST read-stream gap notification. state=detected reason=processing_backpressure region=<region> stream=<stream> reconnectCount=0 ...
+INFO Reconnect complete. region=<region> ... reconnectCount=1
+INFO DIAGNOSTIC TEST read-stream gap notification. state=recovered reason=processing_backpressure region=<region> stream=<stream> reconnectCount=1 ...
+```
+
+The SDK dispatches `ReadStreamGapHandler` asynchronously and serially. The handler should return
+promptly; notifications are operational and best-effort. A responsive broker returning no messages
+is valid `broker_quiet` behavior and does not invoke the gap callback.
+
 Normal shutdown includes a final status snapshot and termination marker:
 
 ```text
@@ -99,5 +119,6 @@ INFO Read-stream status logger stopped. region=<region> groupId=<group> reason=c
 ```
 
 The existing 15-second consume timeout remains responsible for detecting a broker response timeout
-and initiating the established reconnect/resubscribe flow. These diagnostics add evidence only; they
-do not introduce a second stall timeout or change recovery behavior.
+and initiating the established reconnect/resubscribe flow. The callback exposes that confirmed
+condition to the application; it does not introduce a second stall timeout or change recovery
+behavior.

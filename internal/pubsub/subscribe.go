@@ -31,6 +31,37 @@ var resultProcessingTimeout = 60 * time.Second
 var inactivityMessageLogDuration = 10 * time.Minute
 var errConsumeTimeout = errors.New("consume timeout")
 
+type consumeTimeoutError struct {
+	reason ReadStreamGapReason
+}
+
+func (e *consumeTimeoutError) Error() string {
+	return errConsumeTimeout.Error()
+}
+
+func (e *consumeTimeoutError) Unwrap() error {
+	return errConsumeTimeout
+}
+
+func newConsumeTimeoutError(reason ReadStreamGapReason) error {
+	return &consumeTimeoutError{reason: reason}
+}
+
+func consumeTimeoutReason(err error) ReadStreamGapReason {
+	var timeoutErr *consumeTimeoutError
+	if errors.As(err, &timeoutErr) {
+		return timeoutErr.reason
+	}
+	return ReadStreamGapReasonBrokerResponseTimeout
+}
+
+func (c *internalConnection) confirmedConsumeGap(stream string, reason ReadStreamGapReason) error {
+	if c.config.GapTracker != nil {
+		c.config.GapTracker.detect(c.config.Domain, stream, reason, c.config.stats.sinceLastBrokerResponse(stream))
+	}
+	return newConsumeTimeoutError(reason)
+}
+
 // subscribe subscribes to a DxHub Pubsub Stream
 func (c *internalConnection) subscribe(stream string, subscriptionID string, handler SubscriptionCallback) (string, error) {
 	c.subs.Lock()
@@ -67,6 +98,9 @@ func (c *internalConnection) subscribe(stream string, subscriptionID string, han
 	// Start a fresh diagnostic lifecycle only after subscription creation/reuse succeeds. Process-
 	// lifetime counters remain cumulative across reconnects.
 	c.config.stats.beginStreamLifecycle(stream)
+	if c.config.GapTracker != nil {
+		c.config.GapTracker.subscriptionStarted(stream)
+	}
 
 	c.wg.Add(1)
 	sub.wg.Add(1)
@@ -155,6 +189,9 @@ func (c *internalConnection) consumer(sub *subscription, resultCh chan *rpc.Cons
 			// subscriber is blocked in an app callback, diagnostics must still show that the broker
 			// responded and whether that response contained messages.
 			c.config.stats.recordBrokerResponse(sub.stream, res.ConsumeContext, len(messages))
+			if c.config.GapTracker != nil {
+				c.config.GapTracker.brokerResponse(sub.stream)
+			}
 			if hasStream && len(messages) > 0 {
 				activity = true
 			}
@@ -163,10 +200,10 @@ func (c *internalConnection) consumer(sub *subscription, resultCh chan *rpc.Cons
 			case resultCh <- res:
 				consumeCtx = res.ConsumeContext
 			case <-time.After(resultProcessingTimeout):
-				return errConsumeTimeout
+				return c.confirmedConsumeGap(sub.stream, ReadStreamGapReasonProcessingBackpressure)
 			}
 		case <-time.After(consumeResponseTimeout):
-			return errConsumeTimeout
+			return c.confirmedConsumeGap(sub.stream, ReadStreamGapReasonBrokerResponseTimeout)
 		case <-sub.ctx.Done():
 			return nil
 		}
@@ -230,9 +267,15 @@ func (c *internalConnection) subscriber(sub *subscription) {
 		c.dispatchConsumeResult(sub, res, watch, watchThreshold)
 	}
 	if err != nil {
-		if err == errConsumeTimeout {
-			log.Logger.Warnf("Consume timeout. Disconnecting. region=%s stream=%s subID=%s sinceLastMsgSec=%d",
-				c.config.Domain, sub.stream, sub.id, int(c.config.stats.sinceLastMessage(sub.stream).Seconds()))
+		if errors.Is(err, errConsumeTimeout) {
+			reason := consumeTimeoutReason(err)
+			gapDuration := c.config.stats.sinceLastBrokerResponse(sub.stream)
+			log.Logger.Warnf("Consume timeout. Disconnecting. region=%s stream=%s subID=%s reason=%s sinceLastMsgSec=%d noBrokerResponseForSec=%d",
+				c.config.Domain, sub.stream, sub.id, reason,
+				int(c.config.stats.sinceLastMessage(sub.stream).Seconds()), int(gapDuration.Seconds()))
+			if c.config.GapTracker != nil {
+				c.config.GapTracker.detect(c.config.Domain, sub.stream, reason, gapDuration)
+			}
 			c.markConsumeTimeout()
 			// This requires a go routine otherwise the waitgroup blocks forever
 			go c.disconnect()

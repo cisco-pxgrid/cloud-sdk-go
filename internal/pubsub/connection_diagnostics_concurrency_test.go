@@ -16,6 +16,10 @@ import (
 )
 
 func newDiagnosticsTestConnection(t *testing.T, server *httptest.Server) *Connection {
+	return newDiagnosticsTestConnectionWithGapTracker(t, server, nil)
+}
+
+func newDiagnosticsTestConnectionWithGapTracker(t *testing.T, server *httptest.Server, gapTracker *ReadStreamGapTracker) *Connection {
 	t.Helper()
 	u, err := url.Parse(server.URL)
 	require.NoError(t, err)
@@ -27,6 +31,7 @@ func newDiagnosticsTestConnection(t *testing.T, server *httptest.Server) *Connec
 		},
 		PollInterval:      5 * time.Millisecond,
 		StatusLogInterval: 2 * time.Millisecond,
+		GapTracker:        gapTracker,
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 		}},

@@ -303,6 +303,15 @@ func main() {
 		// Set every diagnostic option explicitly. The SDK defaults are intentionally not used.
 		StatusLogInterval: *statusInterval,
 		LogEachMessage:    logEachMessage,
+		ReadStreamGapHandler: func(event sdk.ReadStreamGapEvent) {
+			logLine := "DIAGNOSTIC TEST read-stream gap notification. state=%s reason=%s region=%s stream=%s durationMs=%d reconnectCount=%d occurredAt=%s"
+			args := []interface{}{event.State, event.Reason, event.Region, event.Stream, event.Duration.Milliseconds(), event.ReconnectCount, event.OccurredAt.UTC().Format(time.RFC3339Nano)}
+			if event.State == sdk.ReadStreamGapDetected {
+				logger.Warnf(logLine, args...)
+			} else {
+				logger.Infof(logLine, args...)
+			}
+		},
 
 		DeviceMessageHandler: simulator.handle,
 		DeviceActivationHandler: func(device *sdk.Device) {
@@ -318,7 +327,7 @@ func main() {
 		},
 	}
 
-	logger.Infof("DIAGNOSTIC TEST configuration. statusInterval=%s logEachMessage=%t publishInterval=%s callbackMode=%s slowDuration=%s blockDuration=%s",
+	logger.Infof("DIAGNOSTIC TEST configuration. statusInterval=%s logEachMessage=%t gapNotifications=true publishInterval=%s callbackMode=%s slowDuration=%s blockDuration=%s",
 		*statusInterval, *logEachMessage, *publishInterval, *callbackMode, *slowDuration, *blockDuration)
 
 	app, err := sdk.New(appConfig)
