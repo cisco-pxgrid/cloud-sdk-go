@@ -121,7 +121,7 @@ func TestConsumeTimeoutReconnectEmitsCompleteDiagnosticSequence(t *testing.T) {
 		gapEvents <- event
 	})
 	connection := newDiagnosticsTestConnectionWithGapTracker(t, server, gapTracker)
-	defer connection.Disconnect()
+	defer disconnectAndWaitForIntegrationTest(t, connection)
 	require.NoError(t, connection.Subscribe("reconnect-stream", func(error, string, map[string]string, []byte) {}))
 
 	require.Eventually(t, func() bool {
