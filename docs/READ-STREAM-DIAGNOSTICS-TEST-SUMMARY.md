@@ -28,7 +28,7 @@ Credentials, tenant identifiers, subscription IDs, and message IDs are omitted o
 | Consume-timeout reconnect, resubscribe, and post-reconnect delivery | Passed | `examples/read-stream-diagnostics/test-blocked-shutdown.log` |
 | Application gap callback: detected and recovered | Passed | Focused tests plus `examples/read-stream-diagnostics/test-gap-callback.log` |
 | Linux `go test -race -v ./...` for base commit | Passed | GitHub Actions run `31612764594`, job `94167993802` on Ubuntu with Go 1.20.x |
-| Linux race rerun after application gap callback | Pending | Run after M-06 is committed and pushed |
+| Linux race rerun after application gap callback | Rerun pending | First run exposed integration-test teardown overlap; test-only fix passes locally |
 | Longevity | Pending | Not run yet |
 
 ## Test 1: cycle mode with per-message logging enabled
@@ -842,6 +842,20 @@ WebSocket RSV-bit close messages were non-blocking observations; neither affecte
 callback flow.
 
 Linux `go test -race -v ./...` must still be rerun after this change is committed and pushed.
+
+### First post-M-06 Linux race attempt
+
+Result: **Failed; test-only cleanup fix implemented, rerun pending**
+
+The race detector attributed the failure to `TestProcessingBackpressureEmitsGapAndRecovery`. The
+available stack showed the reconnected internal connection still executing `closeNotify` while the
+test was completing. The test had also replaced the package-global logger even though it did not
+inspect captured logs.
+
+The correction removes that unnecessary global logger replacement and makes test cleanup wait for
+both the outer reconnect error handler and the current internal connection close path before shared
+timeout fixtures are restored. No SDK runtime or reconnect behavior was changed. The corrected test
+passes 50 consecutive local runs; the scoped package tests and `go vet` also pass.
 
 ## Pending test result template
 

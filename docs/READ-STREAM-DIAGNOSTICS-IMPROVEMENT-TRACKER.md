@@ -44,7 +44,7 @@ For this tracker, severity is ordered as follows:
 | M-03 | Major | Small | Complete; reconnect lifecycle manually verified | Yes | Reset stream baselines across subscribe/reconnect lifecycle |
 | M-04 | Major | Medium | Complete; callback attribution and shutdown manually verified | Yes | Separate SDK processing delay from application callback delay |
 | M-05 | Major | Large | Harness complete; CI race passed; longevity pending | Yes | Add race, reconnect, stale-broker, and callback integration tests |
-| M-06 | Major | Medium | Implementation and manual callback validation complete; Linux race CI pending | Yes | Notify applications of confirmed consume gaps and recovery |
+| M-06 | Major | Medium | Implementation and manual validation complete; race-test cleanup fixed; Linux CI rerun pending | Yes | Notify applications of confirmed consume gaps and recovery |
 | H-01 | High | Small | Deferred | No | Consolidate and correct diagnostic log levels |
 | H-02 | High | Small | Deferred | No | Validate diagnostic durations and unsafe configurations |
 | H-03 | High | Small | Deferred | No | Clarify and cache consume-cursor information |
@@ -264,6 +264,10 @@ classify ordinary no-message periods as failures, or change established reconnec
 - [x] Gap detection/recovery, reason attribution, handler ordering, non-blocking dispatch, panic
   containment, and app-instance propagation pass 50 repeated focused runs.
 - [x] Tests and vet pass for every Go package tracked by the branch after the M-06 scope extension.
+- [x] The first post-M-06 Linux race run exposed teardown from
+  `TestProcessingBackpressureEmitsGapAndRecovery` overlapping the reconnected internal connection's
+  close path. The test-only cleanup now avoids replacing the global logger and joins both connection
+  layers before restoring shared timeout fixtures; the corrected test passes 50 repeated local runs.
 - [x] The manual M-06 run in
   `examples/read-stream-diagnostics/test-gap-callback.log` confirms two independent
   `processing_backpressure` gaps. Each blocked callback emits exactly one `detected` event at the
@@ -426,3 +430,4 @@ The important-only effort is complete when:
 | 2026-07-29 | Add and run `examples/read-stream-stall-simulator`: a local TLS/WebSocket fake cloud connected through the real SDK App path. Reference log `290726_consumer_stalled_simulator.txt` verifies exactly one `consumer_stalled` transition and recovery to `broker_quiet` with no timeout, disconnect, reconnect, or callback block. |
 | 2026-08-14 | Extend scope with M-06: an opt-in, asynchronous application callback for confirmed consume gaps and recovery; retain existing timeout and reconnect behavior and exclude generic no-message alerts. |
 | 2026-08-14 | Validate M-06 manually with `examples/read-stream-diagnostics/test-gap-callback.log`: two processing-backpressure detections, two reconnects, two recoveries, no quiet-region false positive, no panic/drop, and two final status-logger shutdown markers. |
+| 2026-08-14 | Correct the M-06 integration-test teardown after the first Linux race run: remove its unused global logger replacement and wait for both outer reconnect-handler and internal close-path completion before restoring test fixtures. SDK runtime behavior is unchanged; Linux race rerun remains pending. |

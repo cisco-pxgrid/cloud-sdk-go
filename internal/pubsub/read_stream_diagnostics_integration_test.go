@@ -167,15 +167,12 @@ func TestConsumeTimeoutReconnectEmitsCompleteDiagnosticSequence(t *testing.T) {
 }
 
 func TestProcessingBackpressureEmitsGapAndRecovery(t *testing.T) {
-	originalLogger := log.Logger
 	originalConsumeTimeout := consumeResponseTimeout
 	originalProcessingTimeout := resultProcessingTimeout
 	defer func() {
-		log.Logger = originalLogger
 		consumeResponseTimeout = originalConsumeTimeout
 		resultProcessingTimeout = originalProcessingTimeout
 	}()
-	log.Logger = &captureLogger{}
 	consumeResponseTimeout = time.Second
 	resultProcessingTimeout = 20 * time.Millisecond
 
@@ -206,7 +203,7 @@ func TestProcessingBackpressureEmitsGapAndRecovery(t *testing.T) {
 		gapEvents <- event
 	})
 	connection := newDiagnosticsTestConnectionWithGapTracker(t, server, gapTracker)
-	defer connection.Disconnect()
+	defer disconnectAndWaitForIntegrationTest(t, connection)
 
 	callbackStarted := make(chan struct{})
 	releaseCallback := make(chan struct{})
@@ -244,4 +241,36 @@ func TestProcessingBackpressureEmitsGapAndRecovery(t *testing.T) {
 	require.Equal(t, ReadStreamGapRecovered, recovered.State)
 	require.Equal(t, detected.Reason, recovered.Reason)
 	require.GreaterOrEqual(t, connections.Load(), int32(2))
+}
+
+// disconnectAndWaitForIntegrationTest joins both connection layers before a test restores
+// package-level timeouts or other shared fixtures. Connection.Disconnect intentionally does not
+// expose these internal completion signals as public API, but integration tests in this package can
+// wait for them and avoid leaking reconnect/close work into the next test.
+func disconnectAndWaitForIntegrationTest(t *testing.T, connection *Connection) {
+	t.Helper()
+	internal := connection.connectionSnapshot()
+	connection.Disconnect()
+
+	select {
+	case <-connection.Error:
+	case <-time.After(3 * time.Second):
+		t.Error("outer connection error handler did not stop")
+	}
+
+	if internal == nil {
+		return
+	}
+	timeout := time.After(3 * time.Second)
+	for {
+		select {
+		case _, ok := <-internal.Error:
+			if !ok {
+				return
+			}
+		case <-timeout:
+			t.Error("internal connection close path did not stop")
+			return
+		}
+	}
 }
