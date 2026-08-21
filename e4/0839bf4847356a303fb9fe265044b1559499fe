@@ -1,0 +1,28 @@
+.github/workflows/lint.yaml
+  s_ccb708a419bf66::t_8e17f3bcc20558 24
+  s_ccb708a419bf66::t_9efbbcdd4e4141 17-18,22
+.github/workflows/test.yaml
+  s_ccb708a419bf66::t_8e17f3bcc20558 9-11
+  s_ccb708a419bf66::t_9efbbcdd4e4141 21,23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e40839bf4847356a303fb9fe265044b1559499fe",
+  "prompts": {},
+  "humans": {
+    "h_83a28b10931070": {
+      "author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  },
+  "sessions": {
+    "s_ccb708a419bf66": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f897c-ac6f-7681-bf93-89503aefb5c2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
