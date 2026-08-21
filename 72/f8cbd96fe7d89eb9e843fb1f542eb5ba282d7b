@@ -1,0 +1,26 @@
+examples/read-stream-diagnostics/main.go
+  s_ccb708a419bf66::t_90b99385811ad1 176-180,341-345,373-377
+app_test.go
+  s_ccb708a419bf66::t_90b99385811ad1 354-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "72f8cbd96fe7d89eb9e843fb1f542eb5ba282d7b",
+  "prompts": {},
+  "humans": {
+    "h_83a28b10931070": {
+      "author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  },
+  "sessions": {
+    "s_ccb708a419bf66": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f897c-ac6f-7681-bf93-89503aefb5c2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
