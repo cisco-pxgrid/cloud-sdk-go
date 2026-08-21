@@ -1,0 +1,37 @@
+.github/workflows/lint.yaml
+  s_ccb708a419bf66::t_945328a23de675 19
+internal/pubsub/connection.go
+  s_ccb708a419bf66::t_945328a23de675 169,220,224
+.github/workflows/test.yaml
+  s_ccb708a419bf66::t_945328a23de675 14
+internal/pubsub/connection_test.go
+  s_ccb708a419bf66::t_3aade6485cede0 425
+go.mod
+  s_ccb708a419bf66::t_945328a23de675 3
+  s_ccb708a419bf66::t_bdb0cf868663ca 17-24
+go.sum
+  s_ccb708a419bf66::t_159b40381b075a 85
+vendor/modules.txt
+  s_ccb708a419bf66::t_886223f9d8cf56 2,9,12,18,21,35,39,42,48,53,56,59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "26a2a77b43a7c152d225ff2679977cb76a3c0349",
+  "prompts": {},
+  "humans": {
+    "h_83a28b10931070": {
+      "author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  },
+  "sessions": {
+    "s_ccb708a419bf66": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f897c-ac6f-7681-bf93-89503aefb5c2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
