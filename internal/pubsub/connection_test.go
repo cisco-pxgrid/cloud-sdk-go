@@ -49,11 +49,14 @@ func Test_E2E(t *testing.T) {
 
 	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
+	defer c.disconnect()
 
 	// 5 subscriptions
 	numSubs := 5
+	numMessages := 100
 	receivedMsgs := make(map[string]int, numSubs)
 	receivedMu := sync.Mutex{}
+	callbackErrors := make(chan error, numSubs*numMessages)
 	for i := 0; i < numSubs; i++ {
 		stream := fmt.Sprintf("test-stream-%d", i)
 		receivedMu.Lock()
@@ -61,17 +64,20 @@ func Test_E2E(t *testing.T) {
 		receivedMu.Unlock()
 		_, err = c.subscribe(stream, "",
 			func(e error, id string, _ map[string]string, payload []byte) {
+				if e != nil {
+					callbackErrors <- fmt.Errorf("stream %s callback failed: %w", stream, e)
+					return
+				}
 				receivedMu.Lock()
 				receivedMsgs[stream]++
 				receivedMu.Unlock()
-				require.NoError(t, e)
 			})
 		require.NoError(t, err)
 	}
 
 	// publish to 5 streams simultaneously
 	var wg sync.WaitGroup
-	numMessages := 100
+	publishErrors := make(chan error, numSubs)
 	for i := 0; i < numSubs; i++ {
 		stream := fmt.Sprintf("test-stream-%d", i)
 		wg.Add(1)
@@ -79,17 +85,41 @@ func Test_E2E(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < numMessages; i++ {
 				payload := []byte("This is a test message on " + stream + ": " + strconv.Itoa(i))
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_, err := c.Publish(ctx, stream, nil, payload)
 				cancel()
-				require.NoError(t, err)
+				if err != nil {
+					publishErrors <- fmt.Errorf("publish to %s failed at message %d: %w", stream, i, err)
+					return
+				}
 			}
 		}()
 	}
 	wg.Wait()
+	close(publishErrors)
+	for publishErr := range publishErrors {
+		require.NoError(t, publishErr)
+	}
 
-	// wait for sever to respond to all consume requests
-	time.Sleep(3 * time.Second)
+	// Wait for all consume responses instead of assuming a fixed processing speed. Race-enabled CI
+	// is intentionally slower, so elapsed time is not part of this end-to-end correctness test.
+	require.Eventually(t, func() bool {
+		receivedMu.Lock()
+		defer receivedMu.Unlock()
+		for _, count := range receivedMsgs {
+			if count != numMessages {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, 10*time.Millisecond, "Did not receive all published messages")
+
+	c.disconnect()
+	select {
+	case callbackErr := <-callbackErrors:
+		require.NoError(t, callbackErr)
+	default:
+	}
 
 	// verify
 	for i := 0; i < numSubs; i++ {
@@ -99,7 +129,6 @@ func Test_E2E(t *testing.T) {
 		receivedMu.Unlock()
 	}
 
-	c.disconnect()
 	require.Equal(t, true, c.isDisconnected(), "Connection is still connected")
 
 	t.Logf("subs table: %#v", c.subs.table)
@@ -385,11 +414,15 @@ func Test_ConsumeTimeout(t *testing.T) {
 	})
 	defer s.Close()
 
-	// Change to shorter timeout
+	// Change to shorter timeout and restore it only after this test's consumer is stopped.
+	originalConsumeResponseTimeout := consumeResponseTimeout
 	consumeResponseTimeout = 2 * time.Second
+	defer func() { consumeResponseTimeout = originalConsumeResponseTimeout }()
 
 	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
+	defer c.disconnect()
+	require.False(t, c.hasConsumeTimeout())
 
 	_, err = c.subscribe("test-stream", "",
 		func(_ error, _ string, _ map[string]string, _ []byte) {
@@ -399,7 +432,7 @@ func Test_ConsumeTimeout(t *testing.T) {
 
 	select {
 	case <-c.Error:
-		require.True(t, c.consumeTimeout)
+		require.True(t, c.hasConsumeTimeout())
 	case <-time.After(5 * time.Second):
 		require.Fail(t, "Error expected")
 	}

@@ -57,6 +57,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	rpc "github.com/cisco-pxgrid/cloud-sdk-go/internal/rpc"
@@ -73,9 +74,13 @@ var (
 	pongWait            = 60 * time.Second
 	defaultPollInterval = 1 * time.Second
 	handlersExpiration  = 3 * time.Minute
-	WebSocketScheme     = "wss"
-	HttpScheme          = "https"
-	apiPaths            = struct {
+
+	// defaultStatusLogInterval is how often the connection logs a status heartbeat
+	// and a per-stream message-count summary for diagnostics.
+	defaultStatusLogInterval = 60 * time.Second
+	WebSocketScheme          = "wss"
+	HttpScheme               = "https"
+	apiPaths                 = struct {
 		subscriptions string
 		pubsub        string
 	}{
@@ -112,7 +117,24 @@ type Config struct {
 	// Default is 1 second.
 	PollInterval time.Duration
 
+	// StatusLogInterval defines how often the connection logs a status heartbeat and a
+	// per-stream message-count summary for diagnostics. Default is 60 seconds.
+	StatusLogInterval time.Duration
+
+	// LogEachMessage, when true, logs a concise INFO line for every message as soon as it
+	// is received on the read stream, before any processing.
+	LogEachMessage bool
+
+	// GapTracker forwards confirmed consume gaps and recoveries to the owning App. It is shared
+	// across Connection reconstruction and is nil unless the application registers a handler.
+	GapTracker *ReadStreamGapTracker
+
 	Transport *http.Transport
+
+	// stats holds shared read-stream diagnostic metrics. It is injected by NewConnection so
+	// that it survives across reconnects (each reconnect builds a new internalConnection from
+	// the same Config). It is unexported and cannot be set by callers.
+	stats *connStats
 }
 
 // internalConnection represents a connection to the DxHub PubSub server.
@@ -142,8 +164,9 @@ type internalConnection struct {
 	}
 	msgHandlers *handlerMap
 
-	// consumeTimeout to signify there was a consume timeout within subscriber
-	consumeTimeout bool
+	// consumeTimeout is set atomically because the subscriber records the timeout while the
+	// connection manager reads it after receiving the connection-close notification.
+	consumeTimeout atomic.Bool
 }
 
 // newInternalConnection creates a new connection object based on the supplied configuration.
@@ -156,6 +179,12 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 	}
 	if config.PollInterval == 0 {
 		config.PollInterval = defaultPollInterval
+	}
+	if config.StatusLogInterval == 0 {
+		config.StatusLogInterval = defaultStatusLogInterval
+	}
+	if config.stats == nil {
+		config.stats = newConnStats()
 	}
 
 	httpClient := resty.New()
@@ -185,6 +214,14 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 	}
 
 	return c, nil
+}
+
+func (c *internalConnection) markConsumeTimeout() {
+	c.consumeTimeout.Store(true)
+}
+
+func (c *internalConnection) hasConsumeTimeout() bool {
+	return c.consumeTimeout.Load()
 }
 
 func (c *internalConnection) String() string {
@@ -223,6 +260,7 @@ func (c *internalConnection) connect(ctx context.Context) error {
 		return fmt.Errorf("failed to connect: %v", err)
 	}
 	log.Logger.Infof("Connected to PubSub server. url=%s groupId=%s", brokerSubURL.String(), c.config.GroupID)
+	c.config.stats.recordConnected()
 	c.ws.SetReadLimit(maxMessageSize)
 
 	c.wg.Add(1)
@@ -372,7 +410,7 @@ func (c *internalConnection) closeNotify(err error) {
 		// WORKAROUND To decide if subscription needs to be deleted
 		// c.unsubscribe still needs to be called to free up other resource
 		deleteSub := true
-		if c.consumeTimeout {
+		if c.hasConsumeTimeout() {
 			log.Logger.Infof("Consume timeout. Not deleting subscription as reconnect will reuse")
 			deleteSub = false
 		}
