@@ -166,7 +166,7 @@ type internalConnection struct {
 
 	// consumeTimeout is set atomically because the subscriber records the timeout while the
 	// connection manager reads it after receiving the connection-close notification.
-	consumeTimeout uint32
+	consumeTimeout atomic.Bool
 }
 
 // newInternalConnection creates a new connection object based on the supplied configuration.
@@ -217,11 +217,11 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 }
 
 func (c *internalConnection) markConsumeTimeout() {
-	atomic.StoreUint32(&c.consumeTimeout, 1)
+	c.consumeTimeout.Store(true)
 }
 
 func (c *internalConnection) hasConsumeTimeout() bool {
-	return atomic.LoadUint32(&c.consumeTimeout) == 1
+	return c.consumeTimeout.Load()
 }
 
 func (c *internalConnection) String() string {

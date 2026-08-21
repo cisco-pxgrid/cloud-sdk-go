@@ -422,6 +422,7 @@ func Test_ConsumeTimeout(t *testing.T) {
 	c, err := setupInternalConnection(s)
 	require.NoError(t, err)
 	defer c.disconnect()
+	require.False(t, c.hasConsumeTimeout())
 
 	_, err = c.subscribe("test-stream", "",
 		func(_ error, _ string, _ map[string]string, _ []byte) {
