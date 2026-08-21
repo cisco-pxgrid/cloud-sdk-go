@@ -173,7 +173,11 @@ func publishEcho(ctx context.Context, device *sdk.Device, sequence uint64) error
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Warnf("Failed to close echo publish response body: %v", err)
+		}
+	}()
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
 		return err
 	}
@@ -334,7 +338,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer app.Close()
+	defer func() {
+		if err := app.Close(); err != nil {
+			logger.Errorf("Parent app close error: %v", err)
+		}
+	}()
 
 	instanceCfg := &cfg.AppInstance
 	var appInstance *sdk.App
@@ -362,7 +370,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer appInstance.Close()
+	defer func() {
+		if err := appInstance.Close(); err != nil {
+			logger.Errorf("App instance close error: %v", err)
+		}
+	}()
 
 	devices, err := tenant.GetDevices()
 	if err != nil {

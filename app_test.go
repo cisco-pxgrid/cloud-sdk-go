@@ -351,7 +351,9 @@ func TestAppConnectionFailureThenRecovery(t *testing.T) {
 	})
 	require.NoError(t, err)
 	app.startPubsubConnect()
-	defer app.Close()
+	defer func() {
+		require.NoError(t, app.Close())
+	}()
 
 	require.Eventually(t, func() bool { return attempts.Load() >= 2 }, 3*time.Second, 5*time.Millisecond)
 }
