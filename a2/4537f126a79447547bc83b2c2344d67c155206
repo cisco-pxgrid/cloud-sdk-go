@@ -1,0 +1,63 @@
+go.mod
+  s_d89442fc3c700d::t_078811c55169a2 3,7,22
+examples/read-stream-diagnostics/main_test.go
+  s_d89442fc3c700d::t_4a3ecac6aac993 1-57
+internal/pubsub/test/server.go
+  s_d89442fc3c700d::t_7533de711b2f76 6,96-99
+examples/read-stream-diagnostics/README.md
+  s_d89442fc3c700d::t_4a3ecac6aac993 74-77
+  s_d89442fc3c700d::t_e7919fda547534 41-44
+examples/read-stream-diagnostics/main.go
+  s_d89442fc3c700d::t_cc9394658de947 70,75-103,297-299
+.github/workflows/test.yaml
+  s_d89442fc3c700d::t_4a3ecac6aac993 8-9
+SECURITY_HARDENING_REVIEW.md
+  s_d89442fc3c700d::t_5a90d2272dc439 63-80
+  s_d89442fc3c700d::t_a9d04b2b102ee8 1-62
+go.sum
+  s_d89442fc3c700d::t_c5b20872d95404 10-11,67-68,70-71,74-75,78-79
+vendor/github.com/go-chi/chi/v5/CHANGELOG.md
+  s_d89442fc3c700d::t_bd813c949ed186 3-28,114,121,313,319
+vendor/github.com/go-chi/chi/v5/CONTRIBUTING.md
+  s_d89442fc3c700d::t_56b647a3b21576 17,27-30
+vendor/github.com/go-chi/chi/v5/Makefile
+  s_d89442fc3c700d::t_a7b046db48a2f4 1,8,12,16
+vendor/github.com/go-chi/chi/v5/README.md
+  s_d89442fc3c700d::t_0cc4bb6a647980 4,23-25,35,70,90,199,352-356,363,382-387,396,415-470,540-541,568
+vendor/github.com/go-chi/chi/v5/SECURITY.md
+  s_d89442fc3c700d::t_bcf820f5a94987 1-5
+vendor/github.com/go-chi/chi/v5/chi.go
+  s_d89442fc3c700d::t_fab604aac8705f 3,7-10,12-14,16-19,21-23,25-26,40,50-54,80,129-132
+vendor/github.com/go-chi/chi/v5/context.go
+  s_d89442fc3c700d::t_31e64f14b3921e 63,77,94,112,116-122,124-126,128-133,136-138,140-141
+vendor/github.com/go-chi/chi/v5/mux.go
+  s_d89442fc3c700d::t_4f7db3b77f748c 32-33,45-46,110-115,122,165,259,263,270-271,360-368,371,374-381,384-390,393,407,411,470-476,481,516-525
+vendor/github.com/go-chi/chi/v5/tree.go
+  s_d89442fc3c700d::t_0957d3cc61bfc3 11,47-58,75,333,434,469-475,515-521,653-654,731-732,773-775,780,840,843-848,862
+vendor/golang.org/x/net/LICENSE
+  s_d89442fc3c700d::t_b055400757b854 1,13
+vendor/golang.org/x/net/publicsuffix/data/text
+  s_d89442fc3c700d::t_f90dd66000c415 1
+vendor/golang.org/x/net/publicsuffix/list.go
+  s_d89442fc3c700d::t_3b74584df5b527 54,81,88-91,96,137,186,193-197,204-209
+vendor/golang.org/x/net/publicsuffix/table.go
+  s_d89442fc3c700d::t_20e91e58f0e777 7,29,66-70
+vendor/modules.txt
+  s_d89442fc3c700d::t_a3980c5193c7ad 11-12,52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "a24537f126a79447547bc83b2c2344d67c155206",
+  "prompts": {},
+  "sessions": {
+    "s_d89442fc3c700d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03419-5879-7c22-a267-29c69ba9eab7",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
