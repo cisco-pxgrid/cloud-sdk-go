@@ -1,0 +1,19 @@
+SECURITY_HARDENING_REVIEW.md
+  s_d89442fc3c700d::t_38a694182b295c 81-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "d6d4be36e7c3e3f159444d8d458ecf4c1f57d7ec",
+  "prompts": {},
+  "sessions": {
+    "s_d89442fc3c700d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03419-5879-7c22-a267-29c69ba9eab7",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
