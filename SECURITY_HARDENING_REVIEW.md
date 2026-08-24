@@ -78,3 +78,12 @@ The following checks passed on Windows using the official Go 1.25.14 toolchain:
 
 Race testing remains a required pull-request CI gate because the local Windows Go environment has
 CGO disabled and no C compiler.
+
+### Validation caveat
+
+One 20-run package soak that was launched concurrently with the full suite, the 100-run E2E soak,
+and `go vet` exited unsuccessfully under that artificial local contention. Its very large combined
+diagnostic output did not retain a usable failing assertion. Two subsequent structured, isolated
+package soaks completed successfully at 20 and 50 consecutive runs, and the isolated E2E test
+completed successfully at 100 consecutive runs. Because the contention-heavy result could not be
+attributed conclusively, a green Linux race-enabled pull-request run is a mandatory merge gate.
