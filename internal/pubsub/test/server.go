@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -92,7 +93,10 @@ func NewRPCServer(t *testing.T, cfg Config) (*httptest.Server, *chi.Mux) {
 		for {
 			mt, payload, err := c.Read(ctx)
 			if err != nil {
-				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+				closeStatus := websocket.CloseStatus(err)
+				if closeStatus != websocket.StatusNormalClosure &&
+					closeStatus != websocket.StatusGoingAway &&
+					!errors.Is(err, io.EOF) {
 					t.Errorf("Read error: %v", err)
 				}
 				break

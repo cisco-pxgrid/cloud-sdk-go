@@ -38,7 +38,10 @@ appInstance:
 ```
 
 On the first successful run, the example redeems the OTP and rewrites this file with the app
-instance and tenant values using owner-only file permissions. Later runs reuse those stored values.
+instance and tenant values. On Unix systems it tightens an existing file to owner-only permissions
+before writing credentials. On Windows, place the file in a directory whose ACL grants access only
+to your account. Later runs reuse the stored values. Keep this file outside shared directories and
+do not commit it.
 
 ## Run
 
@@ -68,8 +71,10 @@ Useful focused runs:
 ```
 
 Available controls are `-status-interval`, `-log-each-message`, `-publish-interval`,
-`-callback-mode`, `-slow-duration`, and `-block-duration`. Press Ctrl+C to stop; an active simulated
-callback is released during shutdown.
+`-callback-mode`, `-slow-duration`, `-block-duration`, and `-insecure`. The `-insecure` option
+disables TLS certificate verification and emits a security warning. Use it only in a controlled
+diagnostic environment with a known endpoint; never use it for production traffic. Press Ctrl+C to
+stop; an active simulated callback is released during shutdown.
 
 ## Expected output
 
