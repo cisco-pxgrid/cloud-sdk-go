@@ -1,0 +1,94 @@
+internal/pubsub/reconnect.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 10,53-56,74-83
+examples/dynamic-log-toggle/TEST-VALIDATION.md
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 2-8,10-41,43-48,50-66,68-69,71-73,75-117,119-120
+  s_0a29e941e7fcaf::t_6240827a529a1b 1,9,42,49,67,70,74,118
+examples/read-stream-diagnostics/main_test.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 1-57
+internal/pubsub/log_each_message_live_toggle_integration_test.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 1-94
+LogEachMessage-notes.md
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 2-5,7-11,18-22,25,27-33,35-36,38-43
+  s_0a29e941e7fcaf::t_6240827a529a1b 1,6,12-17,23-24,26,34,37
+go.mod
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 3,7,22
+internal/pubsub/connstats_test.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 289-334
+examples/read-stream-diagnostics/main.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 70,75-103,297-299
+examples/dynamic-log-toggle/README.md
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 1-13,16-50,52-55,57-62,64,66-67,69-70,72-86,89-96
+  s_0a29e941e7fcaf::t_6240827a529a1b 14-15,51,56,63,65,68,71,87-88
+examples/read-stream-diagnostics/README.md
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 41-44,74-77
+app.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 14,159-162,189-192,253-255,452-453,455-467
+appinstance.go
+  s_0a29e941e7fcaf::t_3810634d7b0336 134,150
+.github/workflows/test.yaml
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 8-9
+internal/pubsub/connection.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 124-127,140-155,207-210
+app_test.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 68,71-85
+.gitignore
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 16-20
+internal/pubsub/test/server.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 6,96-99
+internal/pubsub/subscribe.go
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 303
+examples/dynamic-log-toggle/config_sample.yaml
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 1-23
+SECURITY_HARDENING_REVIEW.md
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 1-13,16,18-32,35,41-89
+  s_0a29e941e7fcaf::t_6240827a529a1b 14-15,17,33-34,36-40
+examples/dynamic-log-toggle/main.go
+  s_0a29e941e7fcaf::t_3810634d7b0336 12-16,134-139,147-155,178
+  s_0a29e941e7fcaf::t_0836e60a8e2ba0 1-11,17-133,140-146,156-177,179-244
+go.sum
+  s_0a29e941e7fcaf::t_02f0c0041c13d9 10-11,67-68,70-71,74-75,78-79
+vendor/github.com/go-chi/chi/v5/CHANGELOG.md
+  s_0a29e941e7fcaf::t_3bcdc4906b212a 3-28,114,121,313,319
+vendor/github.com/go-chi/chi/v5/CONTRIBUTING.md
+  s_0a29e941e7fcaf::t_3ecddf53fe0bf0 17,27-31
+vendor/github.com/go-chi/chi/v5/Makefile
+  s_0a29e941e7fcaf::t_cda1cdc2b615a4 1,8,12,16
+vendor/github.com/go-chi/chi/v5/README.md
+  s_0a29e941e7fcaf::t_2596ebb86524eb 4,23-25,35,70,90,199,352-356,363,382-387,396,415-470,540-541,568
+vendor/github.com/go-chi/chi/v5/SECURITY.md
+  s_0a29e941e7fcaf::t_fc2e8670bf58bb 1-5
+vendor/github.com/go-chi/chi/v5/chi.go
+  s_0a29e941e7fcaf::t_8ff22994ccf6cd 3,7-10,12-14,16-19,21-23,25-26,40,50-54,80,129-132
+vendor/github.com/go-chi/chi/v5/context.go
+  s_0a29e941e7fcaf::t_16fa69e5999c81 63,77,94,112,116-122,124-126,128-133,136-138,140-141
+vendor/github.com/go-chi/chi/v5/mux.go
+  s_0a29e941e7fcaf::t_868cfd18469fbb 32-33,45-46,110-115,122,165,259,263,270-271,360-368,371,374-381,384-390,393,407,411,470-476,481,516-525
+vendor/github.com/go-chi/chi/v5/tree.go
+  s_0a29e941e7fcaf::t_8d672ee5338a62 11,47-58,75,333,434,469-475,515-521,653-654,731-732,773-775,780,840,843-848,862
+vendor/golang.org/x/net/LICENSE
+  s_0a29e941e7fcaf::t_b40dfa90fdcd65 1,13
+vendor/golang.org/x/net/publicsuffix/data/text
+  s_0a29e941e7fcaf::t_422ce35a0b9572 1
+vendor/golang.org/x/net/publicsuffix/list.go
+  s_0a29e941e7fcaf::t_b77cc750c6f4ed 54,81,88-91,96,137,186,193-197,204-209
+vendor/golang.org/x/net/publicsuffix/table.go
+  s_0a29e941e7fcaf::t_ff8f77ad902206 7,29,66-70
+vendor/modules.txt
+  s_0a29e941e7fcaf::t_47634632cecaee 11-12,52-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "04b2f12d67d649c482f1fe4f9944747b25a2e2e7",
+  "prompts": {},
+  "sessions": {
+    "s_0a29e941e7fcaf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0af81-862b-7032-96c0-b1d592499ed4",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
