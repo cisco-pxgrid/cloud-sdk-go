@@ -67,12 +67,40 @@ func loadConfig(file string) (*config, error) {
 	return &cfg, nil
 }
 
-func (c *config) store(file string) error {
+func (c *config) store(file string) (err error) {
 	data, err := yaml.Marshal(c)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(file, data, 0600)
+
+	configFile, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := configFile.Close(); err == nil {
+			err = closeErr
+		}
+	}()
+
+	// OpenFile's mode is ignored when the file already exists. Tighten permissions before
+	// replacing its contents because this configuration contains API keys and tenant tokens.
+	if err := configFile.Chmod(0600); err != nil {
+		return fmt.Errorf("restrict config file permissions: %w", err)
+	}
+	if err := configFile.Truncate(0); err != nil {
+		return fmt.Errorf("truncate config file: %w", err)
+	}
+	if _, err := configFile.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek config file: %w", err)
+	}
+	if _, err := configFile.Write(data); err != nil {
+		return fmt.Errorf("write config file: %w", err)
+	}
+	if err := configFile.Sync(); err != nil {
+		return fmt.Errorf("sync config file: %w", err)
+	}
+	return nil
 }
 
 type deviceRegistry struct {
@@ -265,6 +293,9 @@ func main() {
 	log.Logger = logger
 	if *debug {
 		logger.Level = log.LogLevelDebug
+	}
+	if *insecure {
+		logger.Warnf("SECURITY WARNING: TLS certificate verification is disabled; use -insecure only for controlled diagnostic environments")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -300,7 +300,7 @@ func (c *internalConnection) dispatchConsumeResult(sub *subscription, res *rpc.C
 		for _, m := range messages {
 			c.config.stats.recordDispatch(sub.stream)
 			payload, decodeErr := base64.StdEncoding.DecodeString(m.Payload)
-			if c.config.LogEachMessage {
+			if c.config.logEachMessageEnabled() {
 				partition, offset := int64(-1), int64(-1)
 				if p, o, ok := decodeConsumeOffset(res.ConsumeContext, sub.stream); ok {
 					partition, offset = p, o
