@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/internal/pubsub"
@@ -155,8 +156,10 @@ type Config struct {
 	// per-stream message-count summary for diagnostics. Default is 60 seconds.
 	StatusLogInterval time.Duration
 
-	// LogEachMessage controls whether the SDK logs a concise INFO line for every message
-	// received on the read stream, before processing. Defaults to false (disabled) when nil.
+	// LogEachMessage is the initial value controlling whether the SDK logs a concise INFO line
+	// for every message received on the read stream, before processing. Defaults to false
+	// (disabled) when nil. Use App.SetLogEachMessage to toggle this at runtime without
+	// restarting the App.
 	LogEachMessage *bool
 
 	// ReadStreamGapHandler receives confirmed consume-gap and recovery transitions. It is optional
@@ -183,6 +186,10 @@ type App struct {
 	startPubsubConnectOnce sync.Once
 	readStreamGapEvents    chan ReadStreamGapEvent
 	readStreamGapTrackers  []*pubsub.ReadStreamGapTracker
+
+	// logEachMessageEnabled is the live per-message logging flag. It starts from
+	// config.LogEachMessage but can be changed afterwards via SetLogEachMessage.
+	logEachMessageEnabled atomic.Bool
 }
 
 var (
@@ -243,6 +250,9 @@ func New(config Config) (*App, error) {
 		wg:         sync.WaitGroup{},
 	}
 
+	if config.LogEachMessage != nil {
+		app.logEachMessageEnabled.Store(*config.LogEachMessage)
+	}
 	app.ctx, app.ctxCancel = context.WithCancel(context.Background())
 	app.configureReadStreamGapNotifications()
 	log.Logger.Infof("Read-stream diagnostics config. statusLogInterval=%s logEachMessage=%t (0 duration falls back to SDK default 60s)",
@@ -439,12 +449,23 @@ const (
 	msgTypeAppDisconnect = "app:disconnect"
 )
 
-// logEachMessage resolves the per-message logging setting, defaulting to false when unset.
+// logEachMessage reports whether per-message logging is currently enabled. Unlike other config
+// fields, this can change after New() via SetLogEachMessage.
 func (app *App) logEachMessage() bool {
-	if app.config.LogEachMessage != nil {
-		return *app.config.LogEachMessage
+	return app.logEachMessageEnabled.Load()
+}
+
+// SetLogEachMessage enables or disables per-message read-stream logging at runtime. It applies
+// immediately to every regional connection without recreating the App, so callers (or a
+// downstream service wired up to a config-reload/signal/admin-endpoint) can toggle this
+// diagnostic without a restart.
+func (app *App) SetLogEachMessage(enabled bool) {
+	app.logEachMessageEnabled.Store(enabled)
+	for _, connection := range app.conn {
+		if connection != nil {
+			connection.SetLogEachMessage(enabled)
+		}
 	}
-	return false
 }
 
 // readStreamHandler returns the callback that handles messages received on the app's read stream

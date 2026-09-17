@@ -13,3 +13,8 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# Local example config files containing real credentials (keep only the checked-in
+# config_sample.yaml templates; copy them to config.yaml and never commit that copy)
+examples/**/config.yaml
+examples/**/config.local.yaml

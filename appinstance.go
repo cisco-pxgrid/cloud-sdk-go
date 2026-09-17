@@ -131,6 +131,7 @@ func (app *App) SetAppInstance(appID, appApiKey string) (*App, error) {
 }
 
 func (app *App) newAppConfig(appID, appApiKey string) Config {
+	logEachMessage := app.logEachMessage()
 	return Config{
 		ID:                        appID,
 		GlobalFQDN:                app.config.GlobalFQDN,
@@ -146,7 +147,7 @@ func (app *App) newAppConfig(appID, appApiKey string) Config {
 		TenantUnlinkedHandler:     app.config.TenantUnlinkedHandler,
 		DeviceMessageHandler:      app.config.DeviceMessageHandler,
 		StatusLogInterval:         app.config.StatusLogInterval,
-		LogEachMessage:            app.config.LogEachMessage,
+		LogEachMessage:            &logEachMessage,
 		ReadStreamGapHandler:      app.config.ReadStreamGapHandler,
 	}
 }

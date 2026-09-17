@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
@@ -49,6 +50,10 @@ func NewConnection(config Config) (*Connection, error) {
 	if config.stats == nil {
 		config.stats = newConnStats()
 	}
+	if config.logEachMessage == nil {
+		config.logEachMessage = &atomic.Bool{}
+		config.logEachMessage.Store(config.LogEachMessage)
+	}
 	conn, err := newInternalConnection(config)
 	if err != nil {
 		return nil, err
@@ -64,6 +69,16 @@ func NewConnection(config Config) (*Connection, error) {
 
 func (c *Connection) String() string {
 	return fmt.Sprintf("Conn[ID: %s, Domain: %s]", c.config.GroupID, c.config.Domain)
+}
+
+// SetLogEachMessage enables or disables per-message read-stream logging at runtime. It takes
+// effect immediately for the active internalConnection and survives reconnects, since the
+// underlying flag is shared through Config rather than captured once at construction.
+func (c *Connection) SetLogEachMessage(enabled bool) {
+	if c.config.logEachMessage == nil {
+		c.config.logEachMessage = &atomic.Bool{}
+	}
+	c.config.logEachMessage.Store(enabled)
 }
 
 // Connect establishes a connection to the DxHub PubSub server.

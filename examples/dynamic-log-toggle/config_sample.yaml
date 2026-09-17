@@ -1,0 +1,23 @@
+app:
+  id: replace_with_app_id
+  apiKey: replace_with_api_key
+  globalFQDN: dnaservices.cisco.com
+  regionalFQDN: neoffers.cisco.com
+  regionalFQDNs:
+  - neoffers.cisco.com
+  readStream: replace_with_read_stream
+  writeStream: replace_with_write_stream
+  groupId: ""
+  # startup default; PXCLOUD_SDK_DEBUG env var overrides this when explicitly set
+  logEachMessage: false
+
+appInstance:
+  otp: replace_with_otp_from_dna_cloud
+  name: replace_with_instance_name
+  # config file will be rewritten with id, apiKey and tenant after using OTP
+  id:
+  apiKey:
+  tenant:
+    id:
+    name:
+    token:

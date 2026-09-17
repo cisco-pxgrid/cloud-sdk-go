@@ -121,8 +121,10 @@ type Config struct {
 	// per-stream message-count summary for diagnostics. Default is 60 seconds.
 	StatusLogInterval time.Duration
 
-	// LogEachMessage, when true, logs a concise INFO line for every message as soon as it
-	// is received on the read stream, before any processing.
+	// LogEachMessage is the initial value for per-message logging: when true, the SDK logs a
+	// concise INFO line for every message as soon as it is received on the read stream, before
+	// any processing. Use Connection.SetLogEachMessage to toggle this at runtime without
+	// recreating the Connection.
 	LogEachMessage bool
 
 	// GapTracker forwards confirmed consume gaps and recoveries to the owning App. It is shared
@@ -135,6 +137,22 @@ type Config struct {
 	// that it survives across reconnects (each reconnect builds a new internalConnection from
 	// the same Config). It is unexported and cannot be set by callers.
 	stats *connStats
+
+	// logEachMessage holds the live, dynamically toggleable per-message logging flag. It is
+	// shared across Connection reconstruction (reconnects) so SetLogEachMessage takes effect
+	// immediately without waiting for a new connection. It is unexported and cannot be set by
+	// callers directly; it is seeded from LogEachMessage by NewConnection.
+	logEachMessage *atomic.Bool
+}
+
+// logEachMessageEnabled resolves the live per-message logging flag, falling back to the static
+// LogEachMessage value when a Config was built without going through NewConnection (e.g. tests
+// that construct an internalConnection directly).
+func (cfg *Config) logEachMessageEnabled() bool {
+	if cfg.logEachMessage != nil {
+		return cfg.logEachMessage.Load()
+	}
+	return cfg.LogEachMessage
 }
 
 // internalConnection represents a connection to the DxHub PubSub server.
@@ -185,6 +203,10 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 	}
 	if config.stats == nil {
 		config.stats = newConnStats()
+	}
+	if config.logEachMessage == nil {
+		config.logEachMessage = &atomic.Bool{}
+		config.logEachMessage.Store(config.LogEachMessage)
 	}
 
 	httpClient := resty.New()
