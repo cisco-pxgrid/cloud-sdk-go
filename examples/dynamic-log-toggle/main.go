@@ -185,7 +185,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer app.Close()
+	defer func() {
+		if err := app.Close(); err != nil {
+			logger.Errorf("Failed to close parent app: %v", err)
+		}
+	}()
 
 	ac := &cfg.AppInstance
 	tc := &ac.Tenant
@@ -223,7 +227,11 @@ func main() {
 			os.Exit(-1)
 		}
 	}
-	defer appInstance.Close()
+	defer func() {
+		if err := appInstance.Close(); err != nil {
+			logger.Errorf("Failed to close app instance: %v", err)
+		}
+	}()
 	logger.Infof("Linked with tenant: %s", tenant.Name())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
