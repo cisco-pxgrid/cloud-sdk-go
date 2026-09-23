@@ -1,0 +1,35 @@
+app.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 14,159-162,189-192,253-255,452-453,455-467
+internal/pubsub/log_each_message_live_toggle_integration_test.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 1-94
+app_test.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 68,71-85
+internal/pubsub/test/server.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 6,96-99
+internal/pubsub/reconnect.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 10,53-56,74-83
+internal/pubsub/subscribe.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 303
+appinstance.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 134,150
+internal/pubsub/connection.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 124-127,140-155,207-210
+internal/pubsub/connstats_test.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 289-334
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ee7ad30d7bc3274f70f7b8b592be509074a6dcd8",
+  "prompts": {},
+  "sessions": {
+    "s_5ea0f325f88a12": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cf02-3dae-79e0-b49c-e9bef0e5ca77",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
