@@ -286,6 +286,52 @@ func TestPerMessageLogging_Toggle(t *testing.T) {
 	require.Equal(t, before, len(cl.infoSnapshot()))
 }
 
+// TestPerMessageLogging_LiveToggleSurvivesReconnect verifies Connection.SetLogEachMessage flips
+// the flag immediately and that the change is visible to a fresh internalConnection built from
+// the same Config, as happens on reconnect.
+func TestPerMessageLogging_LiveToggleSurvivesReconnect(t *testing.T) {
+	orig := log.Logger
+	defer func() { log.Logger = orig }()
+
+	cl := &captureLogger{}
+	log.Logger = cl
+
+	c, err := NewConnection(Config{
+		GroupID:        "g",
+		Domain:         "example.com",
+		APIKeyProvider: func() ([]byte, error) { return []byte("k"), nil },
+	})
+	require.NoError(t, err)
+
+	sub := &subscription{stream: "app--x-R", id: "sub-1", callback: func(error, string, map[string]string, []byte) {}}
+	result := &rpc.ConsumeResult{
+		Messages: map[string][]rpc.ConsumeMessage{
+			"app--x-R": {{MsgID: "mid-1", Payload: base64.StdEncoding.EncodeToString([]byte("payload")), Headers: map[string]string{}}},
+		},
+	}
+
+	// Disabled by default; enabling live must take effect without recreating the Connection.
+	c.conn.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
+	require.False(t, cl.infoContains("Read-stream message received."))
+
+	c.SetLogEachMessage(true)
+	c.conn.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
+	require.True(t, cl.infoContains("Read-stream message received."))
+
+	// A reconnect builds a new internalConnection from the same shared Config; it must observe
+	// the same live value rather than reverting to the original static LogEachMessage.
+	reconnected, err := newInternalConnection(c.config)
+	require.NoError(t, err)
+	before := len(cl.infoSnapshot())
+	reconnected.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
+	require.Greater(t, len(cl.infoSnapshot()), before)
+
+	c.SetLogEachMessage(false)
+	before = len(cl.infoSnapshot())
+	reconnected.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
+	require.Equal(t, before, len(cl.infoSnapshot()))
+}
+
 func TestClassifyStream_DistinguishesDeliveryAndBlockedCallback(t *testing.T) {
 	now := time.Now()
 	recent := now.Add(-time.Second)

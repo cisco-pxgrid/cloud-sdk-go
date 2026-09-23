@@ -65,12 +65,24 @@ func TestLogEachMessageDefaultsToDisabled(t *testing.T) {
 	app := &App{}
 	require.False(t, app.logEachMessage())
 
-	enabled := true
-	app.config.LogEachMessage = &enabled
+	app.logEachMessageEnabled.Store(true)
 	require.True(t, app.logEachMessage())
 
-	disabled := false
-	app.config.LogEachMessage = &disabled
+	app.logEachMessageEnabled.Store(false)
+	require.False(t, app.logEachMessage())
+}
+
+// TestSetLogEachMessageTogglesLiveWithoutReconnect verifies the runtime toggle a downstream
+// service can call at any time (e.g. from an admin endpoint or signal handler) without
+// recreating the App or its connections.
+func TestSetLogEachMessageTogglesLiveWithoutReconnect(t *testing.T) {
+	app := &App{}
+	require.False(t, app.logEachMessage())
+
+	app.SetLogEachMessage(true)
+	require.True(t, app.logEachMessage())
+
+	app.SetLogEachMessage(false)
 	require.False(t, app.logEachMessage())
 }
 
