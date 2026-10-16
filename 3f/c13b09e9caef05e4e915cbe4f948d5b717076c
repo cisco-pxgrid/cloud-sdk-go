@@ -1,0 +1,45 @@
+internal/pubsub/connstats_test.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 289-334
+internal/pubsub/connection.go
+  s_0a1860a57ccba3::t_2c2fb463853c7d 124-127,140-160,212-215
+internal/pubsub/test/server.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 6,96-99
+appinstance.go
+  s_0a1860a57ccba3::t_2c2fb463853c7d 149
+app.go
+  s_0a1860a57ccba3::t_2c2fb463853c7d 14,159-162,188-191,252,387,405-407,451-452,454-462
+internal/pubsub/subscribe.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 303
+internal/pubsub/reconnect.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 10,53-56,74-83
+examples/read-stream-diagnostics/main.go
+  s_0a1860a57ccba3::t_2c2fb463853c7d 309
+internal/pubsub/log_each_message_live_toggle_integration_test.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 1-94
+app_test.go
+  s_5ea0f325f88a12::t_1bf7ccbc42a307 68,71-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3fc13b09e9caef05e4e915cbe4f948d5b717076c",
+  "prompts": {},
+  "sessions": {
+    "s_0a1860a57ccba3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1454a-e623-7160-869a-f659b6777351",
+        "model": "gpt-6-luna"
+      },
+      "human_author": null
+    },
+    "s_5ea0f325f88a12": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cf02-3dae-79e0-b49c-e9bef0e5ca77",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "kamalrajmadhurakasan1 <kmadhura@cisco.com>"
+    }
+  }
+}
