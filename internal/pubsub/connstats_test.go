@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -246,7 +247,9 @@ func TestPerMessageLogging_Toggle(t *testing.T) {
 	log.Logger = cl
 
 	const consumeCtx = "eyJzdHJlYW1zIjpbeyJzdHJlYW0iOiJhcHAtLXgtUiIsInBhcnRpdGlvbiI6MSwib2Zmc2V0Ijo2MjAyfV19"
-	connection := &internalConnection{config: Config{LogEachMessage: true, Domain: "example.com", stats: newConnStats()}}
+	logEachMessage := &atomic.Bool{}
+	logEachMessage.Store(true)
+	connection := &internalConnection{config: Config{LogEachMessage: logEachMessage, Domain: "example.com", stats: newConnStats()}}
 	sub := &subscription{
 		stream: "app--x-R",
 		id:     "sub-1",
@@ -281,14 +284,14 @@ func TestPerMessageLogging_Toggle(t *testing.T) {
 
 	// The same production dispatch path emits no arrival line when the toggle is disabled.
 	before := len(cl.infoSnapshot())
-	connection.config.LogEachMessage = false
+	connection.config.LogEachMessage.Store(false)
 	connection.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
 	require.Equal(t, before, len(cl.infoSnapshot()))
 }
 
-// TestPerMessageLogging_LiveToggleSurvivesReconnect verifies Connection.SetLogEachMessage flips
-// the flag immediately and that the change is visible to a fresh internalConnection built from
-// the same Config, as happens on reconnect.
+// TestPerMessageLogging_LiveToggleSurvivesReconnect verifies a shared atomic toggle flips
+// immediately and that the change is visible to a fresh internalConnection built from the same
+// Config, as happens on reconnect.
 func TestPerMessageLogging_LiveToggleSurvivesReconnect(t *testing.T) {
 	orig := log.Logger
 	defer func() { log.Logger = orig }()
@@ -296,10 +299,12 @@ func TestPerMessageLogging_LiveToggleSurvivesReconnect(t *testing.T) {
 	cl := &captureLogger{}
 	log.Logger = cl
 
+	logEachMessage := &atomic.Bool{}
 	c, err := NewConnection(Config{
 		GroupID:        "g",
 		Domain:         "example.com",
 		APIKeyProvider: func() ([]byte, error) { return []byte("k"), nil },
+		LogEachMessage: logEachMessage,
 	})
 	require.NoError(t, err)
 
@@ -314,7 +319,7 @@ func TestPerMessageLogging_LiveToggleSurvivesReconnect(t *testing.T) {
 	c.conn.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
 	require.False(t, cl.infoContains("Read-stream message received."))
 
-	c.SetLogEachMessage(true)
+	logEachMessage.Store(true)
 	c.conn.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
 	require.True(t, cl.infoContains("Read-stream message received."))
 
@@ -326,7 +331,7 @@ func TestPerMessageLogging_LiveToggleSurvivesReconnect(t *testing.T) {
 	reconnected.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
 	require.Greater(t, len(cl.infoSnapshot()), before)
 
-	c.SetLogEachMessage(false)
+	logEachMessage.Store(false)
 	before = len(cl.infoSnapshot())
 	reconnected.dispatchConsumeResult(sub, result, &sdkProcessingWatch{}, time.Second)
 	require.Equal(t, before, len(cl.infoSnapshot()))
