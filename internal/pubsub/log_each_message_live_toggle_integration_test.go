@@ -13,12 +13,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSetLogEachMessage_LiveToggleOnRealSubscription is a replica of a real client's
+// TestLogEachMessage_LiveToggleOnRealSubscription is a replica of a real client's
 // connect-subscribe-receive flow (same pattern as the read-stream-diagnostics example), run
-// against the mock RPC server used by the other integration tests in this package. It proves
-// SetLogEachMessage flips the per-message log on/off for an already-running subscription, with no
-// disconnect/reconnect in between.
-func TestSetLogEachMessage_LiveToggleOnRealSubscription(t *testing.T) {
+// against the mock RPC server used by the other integration tests in this package. It proves a
+// shared atomic toggle flips the per-message log on/off for an already-running subscription,
+// with no disconnect/reconnect in between.
+func TestLogEachMessage_LiveToggleOnRealSubscription(t *testing.T) {
 	originalLogger := log.Logger
 	defer func() { log.Logger = originalLogger }()
 	captured := &captureLogger{}
@@ -73,7 +73,7 @@ func TestSetLogEachMessage_LiveToggleOnRealSubscription(t *testing.T) {
 	require.False(t, captured.infoContains("before-toggle"), "no per-message log expected while the switch is off")
 
 	// 2. Flip the switch live, on the exact same connection - no reconnect.
-	connection.SetLogEachMessage(true)
+	connection.config.LogEachMessage.Store(true)
 	require.True(t, connection.config.logEachMessageEnabled())
 	deliverSecond.Store(true)
 
@@ -89,6 +89,6 @@ func TestSetLogEachMessage_LiveToggleOnRealSubscription(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 
 	// 4. Flip back off - takes effect immediately for any further traffic.
-	connection.SetLogEachMessage(false)
+	connection.config.LogEachMessage.Store(false)
 	require.False(t, connection.config.logEachMessageEnabled())
 }
