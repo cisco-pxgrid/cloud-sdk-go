@@ -400,10 +400,9 @@ func (app *App) pubsubConnect() error {
 			},
 			Transport:         app.config.Transport,
 			StatusLogInterval: app.config.StatusLogInterval,
-			LogEachMessage:    app.logEachMessage(),
+			LogEachMessage:    &app.logEachMessageEnabled,
 			GapTracker:        app.readStreamGapTracker(i),
 		}
-		pubsubConfig.BindLogEachMessage(&app.logEachMessageEnabled)
 		connection, connectionErr := pubsub.NewConnection(pubsubConfig)
 		if connectionErr != nil {
 			return fmt.Errorf("failed to create pubsub connection: %v", connectionErr)
