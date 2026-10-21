@@ -121,11 +121,10 @@ type Config struct {
 	// per-stream message-count summary for diagnostics. Default is 60 seconds.
 	StatusLogInterval time.Duration
 
-	// LogEachMessage is the initial value for per-message logging: when true, the SDK logs a
-	// concise INFO line for every message as soon as it is received on the read stream, before
-	// any processing. Use Connection.SetLogEachMessage to toggle this at runtime without
-	// recreating the Connection.
-	LogEachMessage bool
+	// LogEachMessage is the shared live toggle for per-message logging. It is stored atomically so
+	// runtime changes apply immediately to the active connection and to any reconnect-built
+	// internalConnection created from the same Config.
+	LogEachMessage *atomic.Bool
 
 	// GapTracker forwards confirmed consume gaps and recoveries to the owning App. It is shared
 	// across Connection reconstruction and is nil unless the application registers a handler.
@@ -137,27 +136,15 @@ type Config struct {
 	// that it survives across reconnects (each reconnect builds a new internalConnection from
 	// the same Config). It is unexported and cannot be set by callers.
 	stats *connStats
-
-	// logEachMessage holds the live, dynamically toggleable per-message logging flag. It is
-	// shared across Connection reconstruction (reconnects) so SetLogEachMessage takes effect
-	// immediately without waiting for a new connection. Callers can bind this to a shared app
-	// toggle via BindLogEachMessage.
-	logEachMessage *atomic.Bool
 }
 
-// BindLogEachMessage shares a single log toggle across config copies, including reconnects.
-func (cfg *Config) BindLogEachMessage(enabled *atomic.Bool) {
-	cfg.logEachMessage = enabled
-}
-
-// logEachMessageEnabled resolves the live per-message logging flag, falling back to the static
-// LogEachMessage value when a Config was built without going through NewConnection (e.g. tests
-// that construct an internalConnection directly).
+// logEachMessageEnabled resolves the live per-message logging flag, returning false when the
+// Config was constructed without wiring a shared atomic toggle.
 func (cfg *Config) logEachMessageEnabled() bool {
-	if cfg.logEachMessage != nil {
-		return cfg.logEachMessage.Load()
+	if cfg.LogEachMessage == nil {
+		return false
 	}
-	return cfg.LogEachMessage
+	return cfg.LogEachMessage.Load()
 }
 
 // internalConnection represents a connection to the DxHub PubSub server.
@@ -208,10 +195,6 @@ func newInternalConnection(config Config) (*internalConnection, error) {
 	}
 	if config.stats == nil {
 		config.stats = newConnStats()
-	}
-	if config.logEachMessage == nil {
-		config.logEachMessage = &atomic.Bool{}
-		config.logEachMessage.Store(config.LogEachMessage)
 	}
 
 	httpClient := resty.New()
