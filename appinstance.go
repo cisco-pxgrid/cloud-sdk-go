@@ -146,7 +146,7 @@ func (app *App) newAppConfig(appID, appApiKey string) Config {
 		TenantUnlinkedHandler:     app.config.TenantUnlinkedHandler,
 		DeviceMessageHandler:      app.config.DeviceMessageHandler,
 		StatusLogInterval:         app.config.StatusLogInterval,
-		LogEachMessage:            app.config.LogEachMessage,
+		LogEachMessage:            app.logEachMessage(),
 		ReadStreamGapHandler:      app.config.ReadStreamGapHandler,
 	}
 }

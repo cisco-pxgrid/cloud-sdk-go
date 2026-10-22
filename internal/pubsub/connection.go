@@ -121,9 +121,10 @@ type Config struct {
 	// per-stream message-count summary for diagnostics. Default is 60 seconds.
 	StatusLogInterval time.Duration
 
-	// LogEachMessage, when true, logs a concise INFO line for every message as soon as it
-	// is received on the read stream, before any processing.
-	LogEachMessage bool
+	// LogEachMessage is the shared live toggle for per-message logging. It is stored atomically so
+	// runtime changes apply immediately to the active connection and to any reconnect-built
+	// internalConnection created from the same Config.
+	LogEachMessage *atomic.Bool
 
 	// GapTracker forwards confirmed consume gaps and recoveries to the owning App. It is shared
 	// across Connection reconstruction and is nil unless the application registers a handler.
@@ -135,6 +136,15 @@ type Config struct {
 	// that it survives across reconnects (each reconnect builds a new internalConnection from
 	// the same Config). It is unexported and cannot be set by callers.
 	stats *connStats
+}
+
+// logEachMessageEnabled resolves the live per-message logging flag, returning false when the
+// Config was constructed without wiring a shared atomic toggle.
+func (cfg *Config) logEachMessageEnabled() bool {
+	if cfg.LogEachMessage == nil {
+		return false
+	}
+	return cfg.LogEachMessage.Load()
 }
 
 // internalConnection represents a connection to the DxHub PubSub server.

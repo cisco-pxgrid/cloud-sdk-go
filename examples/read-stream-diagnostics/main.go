@@ -306,7 +306,7 @@ func main() {
 
 		// Set every diagnostic option explicitly. The SDK defaults are intentionally not used.
 		StatusLogInterval: *statusInterval,
-		LogEachMessage:    logEachMessage,
+		LogEachMessage:    *logEachMessage,
 		ReadStreamGapHandler: func(event sdk.ReadStreamGapEvent) {
 			logLine := "DIAGNOSTIC TEST read-stream gap notification. state=%s reason=%s region=%s stream=%s durationMs=%d reconnectCount=%d occurredAt=%s"
 			args := []interface{}{event.State, event.Reason, event.Region, event.Stream, event.Duration.Milliseconds(), event.ReconnectCount, event.OccurredAt.UTC().Format(time.RFC3339Nano)}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cisco-pxgrid/cloud-sdk-go/log"
@@ -48,6 +49,9 @@ func NewConnection(config Config) (*Connection, error) {
 	// counters and last-message timestamps.
 	if config.stats == nil {
 		config.stats = newConnStats()
+	}
+	if config.LogEachMessage == nil {
+		config.LogEachMessage = &atomic.Bool{}
 	}
 	conn, err := newInternalConnection(config)
 	if err != nil {
